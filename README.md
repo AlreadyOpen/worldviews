@@ -25,7 +25,7 @@ licence is open.
 
 | View | Sources | Licence |
 |---|---|---|
-| How tall is it? | [AlreadyOpen world-skylines](https://huggingface.co/datasets/alreadyopen/world-skylines) (Overture Maps, Lands Department CSDI for Hong Kong, 3DBAG for the Netherlands); [Overture Maps buildings](https://docs.overturemaps.org/attribution) | ODbL; CSDI terms; CC BY 4.0 |
+| How tall is it? | [AlreadyOpen world-buildings](https://huggingface.co/datasets/alreadyopen/world-buildings) (Overture Maps buildings as one tile set per region) and [AlreadyOpen hk-buildings](https://huggingface.co/datasets/alreadyopen/hk-buildings) (Lands Department via CSDI, for Hong Kong) | ODbL, © OpenStreetMap contributors; CSDI terms |
 | What is happening now? | [USGS earthquakes](https://earthquake.usgs.gov/earthquakes/feed/), [GDACS](https://www.gdacs.org), [NASA EONET](https://eonet.gsfc.nasa.gov) | Public domain; GDACS terms; NASA open data |
 | Where can I ride? (Hong Kong) | [AlreadyOpen hk-transit](https://huggingface.co/datasets/alreadyopen/hk-transit) (TD, KMB, Citybus, MTR) | Government of the HKSAR data (DATA.GOV.HK, CSDI terms) |
 | Who lives here? | [World Bank indicators API](https://data.worldbank.org), [Natural Earth](https://www.naturalearthdata.com), [AlreadyOpen world-places](https://huggingface.co/datasets/alreadyopen/world-places) | CC BY 4.0; public domain; per source |

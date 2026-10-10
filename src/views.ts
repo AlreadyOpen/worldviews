@@ -46,8 +46,8 @@ export const MAG_STOPS = [2.5, 4, 5.5, 7]
 
 export const SOURCES = {
   height: [
-    { name: 'AlreadyOpen world-skylines', href: 'https://huggingface.co/datasets/alreadyopen/world-skylines', licence: 'Overture ODbL, © OpenStreetMap contributors; HK: Lands Department (CSDI); NL: © 3DBAG by tudelft3d and 3DGI (CC BY 4.0)' },
-    { name: 'Overture Maps buildings', href: 'https://docs.overturemaps.org/attribution', licence: 'ODbL' },
+    { name: 'AlreadyOpen world-buildings', href: 'https://huggingface.co/datasets/alreadyopen/world-buildings', licence: 'Overture Maps ODbL, © OpenStreetMap contributors' },
+    { name: 'AlreadyOpen hk-buildings', href: 'https://huggingface.co/datasets/alreadyopen/hk-buildings', licence: 'Lands Department via CSDI (Government of the HKSAR)' },
   ],
   hazards: [
     { name: 'USGS earthquakes, M2.5+', href: 'https://earthquake.usgs.gov/earthquakes/feed/', licence: 'Public domain' },

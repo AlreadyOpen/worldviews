@@ -19,16 +19,13 @@ async function json(url: string) {
   return r.json()
 }
 
-export const SKY = 'https://huggingface.co/buckets/alreadyopen/world-skylines/resolve'
 export const TRANSIT = 'https://huggingface.co/buckets/alreadyopen/hk-transit/resolve'
 
-// Overture deletes releases about 60 days after publishing: always ask STAC for the newest (same as world-buildings/index.html).
-export const overtureBuildings = () => once('overture', async () => {
-  const cat = await json('https://stac.overturemaps.org/catalog.json')
-  const rel = cat.links.filter((l: any) => l.rel === 'child').map((l: any) => l.href).sort().at(-1)
-  const b = await json(rel.replace(/catalog\.json$/, 'buildings/catalog.json'))
-  return { url: b.links.find((l: any) => l.rel === 'pmtiles').href as string, release: rel.split('/').at(-2) as string }
-})
+// Buildings: AlreadyOpen world-buildings, one PMTiles file per region (Overture Maps, and the official CSDI data for Hong Kong),
+// layer `buildings`, from z6 (tallest first) to about z15. The index lists the regions; nothing about them is hard-coded.
+export type Region = { id: string; source: string; bbox: number[]; rows: number; checked: number; tiles: string }
+export const buildingRegions = () => once('world-buildings', async () =>
+  (await json('https://huggingface.co/buckets/alreadyopen/world-buildings/resolve/index.json')) as { release: string; layer: string; regions: Region[] })
 
 // USGS: day feed for live and the day slider (T2), month feed for history (T3). Public domain.
 export const quakes = (span: 'day' | 'month') => once('usgs-' + span, () =>

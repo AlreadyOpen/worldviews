@@ -565,7 +565,7 @@ function Fallback({ s }: { s: S }) {
         <tbody>{people.map(([place, vals]) => <tr key={place}><td>{place}</td>{vals.map((v, i) => <td key={i}>{v}</td>)}</tr>)}</tbody></table>
       <p className="meta">World Bank indicators, latest year. CC BY 4.0.</p>
       <h2 style={{ fontSize: '1.125rem' }}>{name('height', s)}</h2>
-      <p>Building heights need the 3D map. The data is open: <a href="https://huggingface.co/datasets/alreadyopen/world-skylines">world-skylines on Hugging Face</a>.</p>
+      <p>Building heights need the 3D map. The data is open: <a href="https://huggingface.co/datasets/alreadyopen/world-buildings">world-buildings on Hugging Face</a>.</p>
     </main>
   )
 }

@@ -12,14 +12,15 @@ export type EngineState = { views: ViewId[]; base: boolean; sub: Partial<Record<
 export type Pick = { view: ViewId; title: string; rows: [string, string][]; href?: string; source: string; links?: [string, string][] }
 
 const STYLE = { light: 'https://tiles.openfreemap.org/styles/positron', dark: 'https://tiles.openfreemap.org/styles/dark' }
-const SKY_FILES = [['overture', 'Overture Maps (ODbL), © OpenStreetMap contributors'], ['hk', 'Lands Department, CSDI Portal (Government of the HKSAR)'],
-  ['nl', '<a href="https://docs.3dbag.nl/en/copyright/">© 3DBAG by tudelft3d and 3DGI</a>']]
+// Attribution per world-buildings region source.
+const BLD_ATTR: Record<string, string> = { hk: 'Lands Department via CSDI (AlreadyOpen hk-buildings)' }
+const BLD_OVERTURE = 'Overture Maps (ODbL), © OpenStreetMap contributors via AlreadyOpen world-buildings'
 const H: any = ['coalesce', ['get', 'height'], 0]
 const ramp = (input: any, stops: number[], colors: string[]) => ['interpolate', ['linear'], input, ...stops.flatMap((s, i) => [s, colors[i]])]
 const NEUTRAL = { light: { bld: '#d9dcd8', bldTop: '#c9ccc8', line: '#8d938f', nodata: '#e4e6e3' }, dark: { bld: '#3a3f3d', bldTop: '#454b48', line: '#7d8481', nodata: '#2f3432' } }
 export const LAYERS: Record<ViewId | 'base', string[]> = {
-  base: ['b-sky-overture', 'b-sky-hk', 'b-sky-nl', 'b-ov', 'b-mtr'],
-  height: ['h-sky-overture', 'h-sky-hk', 'h-sky-nl', 'h-ov'],
+  base: ['b-mtr'],        // building layers (b-bld-<region>, h-bld-<region>) are appended as their regions load
+  height: [],
   hazards: ['z-eonet', 'z-gdacs', 'z-quake', 'z-eonet-icon', 'z-gdacs-icon', 'z-quake-icon', 'z-quake-label'],
   transit: ['t-bus', 't-mtr', 't-mtr-st', 't-mtr-st-icon'],
   people: ['p-fill', 'p-line'],
@@ -52,7 +53,7 @@ export class World {
   busLoaded = new Set<string>()
   busLines: any[] = []
   busStops: any[] = []
-  overture?: { url: string; release: string }
+  private regions = new Map<string, D.Region>()   // world-buildings regions whose source this map has added
   private installed = false
   private peopleBy: Record<string, { v: number; year: string; src?: string }> = {}
   private peopleRamp: any = null
@@ -72,7 +73,7 @@ export class World {
     this.map = new maplibregl.Map({ container: el, style: STYLE[theme], ...camera, maxPitch: 80, attributionControl: { compact: true },
       canvasContextAttributes: { preserveDrawingBuffer: true } } as any)
     this.map.on('style.load', () => { this.installed = false; this.install(++this.gen).catch(e => console.error('worldviews install failed', e)) })
-    this.map.on('moveend', () => { this.loadBus(); this.onUpdate?.() })
+    this.map.on('moveend', () => { this.loadBus(); this.loadBuildings(); this.onUpdate?.() })
     this.map.on('click', e => this.pick(e.point))
     // Start with the attribution folded (the i button opens it), so it does not run under the panels.
     this.map.once('load', () => this.map.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show'))
@@ -90,24 +91,10 @@ export class World {
     const m = this.map, n = NEUTRAL[this.theme], dark = this.theme === 'dark'
     m.setProjection({ type: 'globe' })
     for (const l of m.getStyle().layers) if ((l as any)['source-layer'] === 'building') m.setLayoutProperty(l.id, 'visibility', 'none')
-    const ov = await this.track(D.overtureBuildings())
-    if (ov.data) this.overture = ov.data
     if (this.installed || gen !== this.gen) return   // a newer style (theme switch) took over while we waited
     this.installed = true
     const hid = { visibility: 'none' } as any, V = RAMPS.viridis[this.theme]
-    for (const [f, attribution] of SKY_FILES) {
-      m.addSource('sky-' + f, { type: 'vector', url: `pmtiles://${D.SKY}/${f}.pmtiles`, attribution })
-      for (const [pre, color] of [['b', n.bld], ['h', ramp(H, HEIGHT_STOPS, V)]] as const)
-        m.addLayer({ id: `${pre}-sky-${f}`, type: 'fill-extrusion', source: 'sky-' + f, 'source-layer': 'skylines', maxzoom: 14, layout: hid,
-          paint: { 'fill-extrusion-color': color as any, 'fill-extrusion-height': H, 'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0], 'fill-extrusion-opacity': 0.92 } })
-    }
-    if (this.overture) {
-      m.addSource('ov', { type: 'vector', url: 'pmtiles://' + this.overture.url, attribution: 'Overture Maps (ODbL), © OpenStreetMap contributors' })
-      const OH: any = ['coalesce', ['get', 'height'], ['*', ['get', 'num_floors'], 3], 3]
-      for (const [pre, color] of [['b', n.bld], ['h', ['case', ['has', 'height'], ramp(['get', 'height'], HEIGHT_STOPS, V), n.nodata]]] as const)
-        m.addLayer({ id: pre + '-ov', type: 'fill-extrusion', source: 'ov', 'source-layer': 'building', minzoom: 14, layout: hid,
-          paint: { 'fill-extrusion-color': color as any, 'fill-extrusion-height': OH, 'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0], 'fill-extrusion-opacity': 0.92 } })
-    }
+    this.regions.clear()
     const empty: any = { type: 'FeatureCollection', features: [] }
     // Natural Earth 1:10m outlines as tiles (AlreadyOpen world-places): 1:50m sat km off at city zoom (Macau)
     m.addSource('people', { type: 'vector', url: `pmtiles://${D.PLACES}/countries.pmtiles`,
@@ -209,6 +196,7 @@ export class World {
     if (s.views.includes('airports')) this.track(D.largeAirports().then(f => { if (f.data && this.installed) (this.map.getSource('apt-large') as any)?.setData({ type: 'FeatureCollection',
       features: f.data.map(a => ({ type: 'Feature', properties: a.props, geometry: { type: 'Point', coordinates: [a.lon, a.lat] } })) }) }))
     if (s.views.includes('transit')) this.loadBus()
+    this.loadBuildings()
     this.filters()
     this.onUpdate?.()
   }
@@ -216,7 +204,7 @@ export class World {
   private filters() {
     const m = this.map, s = this.state, hs = s.sub.height || 'all', zs = s.sub.hazards || 'all', ts = s.sub.transit || 'all'
     const min = hs === 'super' ? 300 : hs === 'tall' ? 150 : 0
-    for (const id of LAYERS.height) if (m.getLayer(id)) m.setFilter(id, min ? ['>=', id === 'h-ov' ? ['coalesce', ['get', 'height'], 0] : H, min] : null)
+    for (const id of LAYERS.height) if (m.getLayer(id)) m.setFilter(id, min ? ['>=', H, min] : null)
     const cut = this.cutoff()
     m.setFilter('z-quake', zs === 'all' || zs === 'quakes' ? (cut ? ['<=', ['get', 'time'], cut] : null) : ['==', 1, 0])
     m.setFilter('z-quake-label', ['all', ['>=', ['get', 'mag'], 5], ...(zs === 'all' || zs === 'quakes' ? [] : [['==', 1, 0]]), ...(cut ? [['<=', ['get', 'time'], cut]] : [])] as any)
@@ -340,6 +328,39 @@ export class World {
     this.satMs = performance.now() - t0
   }
 
+  // Buildings: add a region's tiles only when its bbox meets the view (from z5; the tiles start at z6), so a world of regions
+  // costs no requests until you look at one. Base layers are neutral, height layers take the height ramp.
+  private loadBuildings() {
+    const m = this.map
+    if (!this.installed || m.getZoom() < 5) return
+    this.track(D.buildingRegions().then(f => {
+      if (!f.data || !this.installed) return
+      const b = m.getBounds(), [w, s, e, n] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], N = NEUTRAL[this.theme], V = RAMPS.viridis[this.theme]
+      const OH: any = ['coalesce', ['get', 'height'], ['*', ['get', 'num_floors'], 3], 3]
+      let added = false
+      for (const r of f.data.regions) {
+        const [x0, y0, x1, y1] = r.bbox
+        if (this.regions.has(r.id) || x1 < w || x0 > e || y1 < s || y0 > n) continue
+        this.regions.set(r.id, r)
+        m.addSource('bld-' + r.id, { type: 'vector', url: 'pmtiles://' + r.tiles, attribution: BLD_ATTR[r.source] || BLD_OVERTURE })
+        for (const [pre, color] of [['b', N.bld], ['h', ['case', ['has', 'height'], ramp(['get', 'height'], HEIGHT_STOPS, V), N.nodata]]] as const) {
+          const id = `${pre}-bld-${r.id}`, list = pre === 'b' ? LAYERS.base : LAYERS.height
+          m.addLayer({ id, type: 'fill-extrusion', source: 'bld-' + r.id, 'source-layer': f.data.layer, layout: { visibility: 'none' },
+            paint: { 'fill-extrusion-color': color as any, 'fill-extrusion-height': OH, 'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0], 'fill-extrusion-opacity': 0.92 } }, 'countries-hit')
+          if (!list.includes(id)) list.unshift(id)
+        }
+        added = true
+      }
+      if (!added) return
+      const st = this.state, height = st.views.includes('height')
+      for (const id of this.regions.keys()) {
+        m.setLayoutProperty(`b-bld-${id}`, 'visibility', st.base && !height ? 'visible' : 'none')
+        m.setLayoutProperty(`h-bld-${id}`, 'visibility', height ? 'visible' : 'none')
+      }
+      this.filters(); this.onUpdate?.()
+    }))
+  }
+
   private loadBus() {
     const m = this.map
     if (!this.installed || !this.state.views.includes('transit') || m.getZoom() < 11 || !inHK(m.getCenter().toArray())) return
@@ -368,10 +389,13 @@ export class World {
     if (!f) return this.onPick?.(null)
     let p: any = f.properties; const id = f.layer.id
     const fmt = (t: any) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-    if (id.startsWith('h-')) {
-      const src = id === 'h-ov' ? `Overture Maps ${this.overture?.release || ''}` : id.endsWith('hk') ? 'Lands Department via CSDI (hk-buildings)' : id.endsWith('nl') ? '3DBAG' : 'Overture Maps via world-skylines'
-      return this.onPick?.({ view: 'height', title: p.name || p['names.primary'] || 'Building', source: src, href: id === 'h-ov' ? 'https://docs.overturemaps.org' : 'https://huggingface.co/datasets/alreadyopen/world-skylines',
-        rows: [['Height', p.height != null ? `${Math.round(p.height)} m` : 'Not in the data'], ...(p.num_floors ? [['Floors', String(p.num_floors)]] as [string, string][] : []), ...(p.min_height ? [['Starts at', `${Math.round(p.min_height)} m`]] as [string, string][] : [])] })
+    if (id.startsWith('h-bld-')) {
+      const r = this.regions.get(id.slice(6)), hk = r?.source === 'hk', m1 = (k: string, v: any, f = (x: any) => String(x)) => v != null && v !== '' ? [[k, f(v)]] as [string, string][] : []
+      return this.onPick?.({ view: 'height', title: p.name || p['names.primary'] || p.BuildingNameEN || 'Building',
+        source: hk ? 'Lands Department via CSDI (AlreadyOpen hk-buildings)' : 'Overture Maps via AlreadyOpen world-buildings',
+        href: `https://huggingface.co/datasets/alreadyopen/${hk ? 'hk' : 'world'}-buildings`,
+        rows: [['Height', p.height != null ? `${Math.round(p.height)} m` : 'Not in the data'], ...m1('Floors', p.num_floors ?? p.Storeys), ...m1('Starts at', p.min_height, x => `${Math.round(x)} m`),
+          ...m1('Data source', p.source), ...m1('Check', p.check)] })
     }
     if (id === 'z-quake' || id === 'z-quake-label') return this.onPick?.({ view: 'hazards', title: p.title, source: 'USGS', href: p.url,
       rows: [['Magnitude', String(p.mag)], ['When', fmt(p.time)], ['Felt reports', String(p.felt ?? 0)], ['Tsunami flag', p.tsunami ? 'Yes' : 'No']] })

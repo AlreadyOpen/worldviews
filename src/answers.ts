@@ -72,8 +72,8 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
   if (v === 'height') {
     const sub = w.state.sub.height || 'all'
     const legend: LegendSpec = { kind: 'ramp', title: 'Height above ground', colors: RAMPS.viridis[th], ticks: HEIGHT_STOPS.map((h, i) => i === HEIGHT_STOPS.length - 1 ? `${h} m+` : `${h}`),
-      note: z >= 14 ? 'Pale grey: no height in the data.' : 'Below street zoom, only buildings 30 m and taller are drawn.' }
-    if (z < 5.5) return { status: 'zoom', legend, detail: 'Skylines draw from regional zoom. Every building with a height appears at street zoom.', jump: { label: 'Fly to Hong Kong', ...HK } }
+      note: z >= 14 ? 'Pale grey: no height in the data.' : 'Below street zoom the tallest buildings are drawn first; every building appears at street zoom.' }
+    if (z < 6) return { status: 'zoom', legend, detail: 'Buildings draw from regional zoom, tallest first. Every building appears at street zoom.', jump: { label: 'Fly to Hong Kong', ...HK } }
     const layers = (w.state.views.includes('height') ? LAYERS.height : LAYERS.base).filter(id => m.getLayer(id) && m.getLayoutProperty(id, 'visibility') === 'visible')
     const fs = layers.length ? m.queryRenderedFeatures({ layers }) : []
     const seen = new Map<string, any>()
@@ -84,7 +84,7 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
       jump: { label: 'Fly to Hong Kong', ...HK } }
     const top = all.reduce((a, p) => (p.height > a.height ? p : a))
     return { status: 'ok', legend, value: `${Math.round(top.height)} m`, counts: 'tallest in view',
-      detail: `${top.name || top['names.primary'] || 'Unnamed building'}. ${nf.format(all.length)} ${sub === 'super' ? 'buildings 300 m and taller' : sub === 'tall' ? 'buildings 150 m and taller' : z < 14 ? 'buildings 30 m and taller' : 'buildings with a height'} drawn in view.` }
+      detail: `${top.name || top['names.primary'] || top.BuildingNameEN || 'Unnamed building'}. ${nf.format(all.length)} ${sub === 'super' ? 'buildings 300 m and taller' : sub === 'tall' ? 'buildings 150 m and taller' : 'buildings with a height'} drawn in view.` }
   }
   if (v === 'hazards') {
     const span = w.state.time === 't3' ? 'month' : 'day'
