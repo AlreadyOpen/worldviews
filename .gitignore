@@ -3,3 +3,4 @@ dist/
 .output/
 dev.log
 *chrome*profile*
+dev-full.log

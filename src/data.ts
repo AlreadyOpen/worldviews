@@ -94,13 +94,21 @@ export const worldBank = (ind: Indicator) => once('wb-' + ind, async () => {
 // Official figures for places the World Bank leaves out, from AlreadyOpen/world-places (weekly pipeline: each place's own
 // statistics office; some cannot be read from a browser, e.g. Åland's and Jersey's). One JSON per source, listed in index.json.
 export const PLACES = 'https://huggingface.co/buckets/alreadyopen/world-places/resolve'
+// Two sites from one codebase (Helen, 2026-10-10): WorldViews Libre uses open-licence sources only; WorldViews also reads
+// sources with no open licence (the nc places dataset). Chosen at build time (PUBLIC_EDITION=libre|full); in the libre build the
+// nc branch is dead code and its URL is not in the bundle.
+export const EDITION = import.meta.env.PUBLIC_EDITION === 'full' ? 'full' : 'libre'
+export const SITE = EDITION === 'full' ? 'WorldViews' : 'WorldViews Libre'
 type Own = { iso3: string; population?: number; aged?: number; density?: number; year: string; src: string }
-export const smallPlaces = () => once('small-places', async () => {
-  const idx = await json(`${PLACES}/index.json`)
-  const files = await Promise.all(idx.files.map((f: string) => json(`${PLACES}/${f}`)))
+const placesFrom = async (base: string) => {
+  const idx = await json(`${base}/index.json`)
+  const files = await Promise.all(idx.files.map((f: string) => json(`${base}/${f}`)))
   return files.flatMap((f: any) => f.places.map((p: any): Own => ({ iso3: p.iso3, population: p.population, aged: p.aged_65_plus_pct,
     density: p.density_per_km2, year: p.period, src: f.publisher })))
-})
+}
+export const smallPlaces = () => once('small-places', async () => [
+  ...await placesFrom(PLACES),
+  ...(import.meta.env.PUBLIC_EDITION === 'full' ? await placesFrom('https://huggingface.co/buckets/alreadyopen/world-places-nc/resolve') : [])])
 // World Bank B-READY (CC BY 4.0): one indicator, latest value per economy, keyed by ISO3. Codes IC.BRE.<topic>.OS (topic
 // score) and .P1/.P2/.P3 (its pillars); IC.BRE.P1.RF, P2.PS, P3.OE are the three pillars across all ten topics.
 export const BREADY_PILLARS = ['Regulatory framework', 'Public services', 'Operational efficiency']

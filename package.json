@@ -2,7 +2,13 @@
   "name": "world-views",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "rsbuild dev", "build": "rsbuild build", "start": "node .output/server/index.mjs" },
+  "scripts": {
+    "dev": "rsbuild dev",
+    "dev:full": "PUBLIC_EDITION=full rsbuild dev --port 8761",
+    "build": "PUBLIC_EDITION=libre rsbuild build",
+    "build:full": "PUBLIC_EDITION=full rsbuild build",
+    "start": "node .output/server/index.mjs"
+  },
   "dependencies": {
     "@base-ui/react": "1.8.0",
     "@iconify-icons/ph": "2.0.0",

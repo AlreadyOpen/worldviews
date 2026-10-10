@@ -227,7 +227,7 @@ function TopBar({ s, setS, theme, onPlace }: { s: S; setS: (f: (x: S) => S) => v
   const next = theme === 'dark' ? 'light' : 'dark'
   return (
     <div className="float bar">
-      <span className="mark"><iconify-icon icon="ph:globe-hemisphere-east" width="18" /><span>World views</span></span>
+      <span className="mark"><iconify-icon icon="ph:globe-hemisphere-east" width="18" /><span>{D.SITE}</span></span>
       <div className="search" role="search">
         <iconify-icon icon="ph:magnifying-glass" width="15" />
         <label className="sr" htmlFor="q">Search places</label>
@@ -518,7 +518,7 @@ function Fallback({ s }: { s: S }) {
   useEffect(() => { window.__state = { ...s, fallback: true }; window.__ready = true }, [q.length])
   return (
     <main className="fallback">
-      <h1 style={{ fontSize: '1.5rem' }}>World views, as text</h1>
+      <h1 style={{ fontSize: '1.5rem' }}>{D.SITE}, as text</h1>
       <p>This browser has no WebGL2, so the map cannot draw. Here are the same answers as lists.</p>
       <h2 style={{ fontSize: '1.125rem' }}>{name('hazards', s)}</h2>
       <table><thead><tr><th>Magnitude</th><th>Where</th><th>When</th></tr></thead>
