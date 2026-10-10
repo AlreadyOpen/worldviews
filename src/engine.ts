@@ -2,6 +2,7 @@
 import * as maplibregl from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import * as D from './data'
+import { MAP_ICONS, iconImage } from './icons'
 import { HEIGHT_STOPS, MAG_STOPS, RAMPS, VIEW_IDS, type ViewId, HK, inHK } from './views'
 
 let protocol = false
@@ -18,11 +19,15 @@ const NEUTRAL = { light: { bld: '#d9dcd8', bldTop: '#c9ccc8', line: '#8d938f', n
 export const LAYERS: Record<ViewId | 'base', string[]> = {
   base: ['b-sky-overture', 'b-sky-hk', 'b-sky-nl', 'b-ov', 'b-mtr'],
   height: ['h-sky-overture', 'h-sky-hk', 'h-sky-nl', 'h-ov'],
-  hazards: ['z-eonet', 'z-gdacs', 'z-quake', 'z-quake-label'],
-  transit: ['t-bus', 't-mtr', 't-mtr-st'],
+  hazards: ['z-eonet', 'z-gdacs', 'z-quake', 'z-eonet-icon', 'z-gdacs-icon', 'z-quake-icon', 'z-quake-label'],
+  transit: ['t-bus', 't-mtr', 't-mtr-st', 't-mtr-st-icon'],
   people: ['p-fill', 'p-line'],
 }
 const EONET_CAT: Record<string, string> = { severeStorms: 'storms', floods: 'floods', drought: 'floods', wildfires: 'fire', volcanoes: 'fire' }
+// Which icon each hazard kind gets (GDACS event type, NASA EONET category id).
+const GDACS_ICON: any = ['match', ['get', 'eventtype'], 'EQ', 'i-pulse', 'TC', 'i-hurricane', 'FL', 'i-drop', 'DR', 'i-sun-dim', 'WF', 'i-fire', 'VO', 'i-mountains', 'i-warning']
+const EONET_ICON: any = ['match', ['get', 'catId'], 'severeStorms', 'i-hurricane', 'floods', 'i-drop', 'drought', 'i-sun-dim', 'wildfires', 'i-fire',
+  'volcanoes', 'i-mountains', 'earthquakes', 'i-pulse', 'seaLakeIce', 'i-snowflake', 'snow', 'i-snowflake', 'i-warning']
 const GDACS_CAT: Record<string, string> = { TC: 'storms', FL: 'floods', DR: 'floods', WF: 'fire', VO: 'fire' }
 
 export class World {
@@ -110,10 +115,10 @@ export class World {
     m.addLayer({ id: 't-mtr', type: 'line', source: 'mtr', layout: { ...hid, 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 2, 15, 5] } })
     m.addLayer({ id: 't-mtr-st', type: 'circle', source: 'mtr-st', minzoom: 11, layout: hid,
-      paint: { 'circle-radius': 4, 'circle-color': dark ? '#151918' : '#fbfcfa', 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 2.5 } })
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 5, 15, 8], 'circle-color': dark ? '#151918' : '#fbfcfa', 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 2.5 } })
     const sev: any = ['match', ['get', 'alertlevel'], 'Red', 3, 'Orange', 2, 1]
     m.addLayer({ id: 'z-eonet', type: 'circle', source: 'eonet', layout: hid,
-      paint: { 'circle-radius': 5, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': dark ? '#d8dedb' : '#2c3330', 'circle-stroke-width': 1.5 } })
+      paint: { 'circle-radius': 7, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': dark ? '#d8dedb' : '#2c3330', 'circle-stroke-width': 1.5 } })
     m.addLayer({ id: 'z-gdacs', type: 'circle', source: 'gdacs', layout: hid,
       paint: { 'circle-radius': ['*', 4, sev], 'circle-color': ramp(sev, [1, 2, 3], [I[1], I[2], I[3]]), 'circle-stroke-color': dark ? '#151918' : '#fbfcfa', 'circle-stroke-width': 1.5 } })
     m.addLayer({ id: 'z-quake', type: 'circle', source: 'quakes', layout: hid,
@@ -122,6 +127,16 @@ export class World {
     m.addLayer({ id: 'z-quake-label', type: 'symbol', source: 'quakes', filter: ['>=', ['get', 'mag'], 5], layout: { ...hid,
       'text-field': ['concat', 'M', ['to-string', ['get', 'mag']]], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.4] },
       paint: { 'text-color': dark ? '#e6ebe8' : '#1d2120', 'text-halo-color': dark ? '#151918' : '#fbfcfa', 'text-halo-width': 1.5 } })
+    // Iconify icons on the points (SDF, so one image takes any colour); circles keep the data colour underneath
+    await Promise.all(Object.entries(MAP_ICONS).map(async ([id, d]) => { if (!m.hasImage(id)) m.addImage(id, await iconImage(d), { sdf: true, pixelRatio: 2 }) }))
+    if (gen !== this.gen) return
+    const icon = (id: string, source: string, image: any, size: any, color: any, extra: any = {}) =>
+      m.addLayer({ id, type: 'symbol', source, ...extra, layout: { ...hid, 'icon-image': image, 'icon-size': size, 'icon-allow-overlap': true, 'icon-ignore-placement': true },
+        paint: { 'icon-color': color } })
+    icon('z-quake-icon', 'quakes', 'i-pulse', ['interpolate', ['exponential', 1.6], ['get', 'mag'], 4, 0.22, 5, 0.3, 8, 0.95], '#fff', { filter: ['>=', ['get', 'mag'], 4] })
+    icon('z-gdacs-icon', 'gdacs', GDACS_ICON, ['*', 0.17, sev], '#fff')
+    icon('z-eonet-icon', 'eonet', EONET_ICON, 0.2, dark ? '#d8dedb' : '#2c3330')
+    icon('t-mtr-st-icon', 'mtr-st', 'i-subway', ['interpolate', ['linear'], ['zoom'], 11, 0.16, 15, 0.3], ['get', 'color'], { minzoom: 11 })
     this.apply(this.state, true)
   }
 
@@ -184,7 +199,7 @@ export class World {
       ({ ...f, properties: { name: f.properties.name, alertlevel: f.properties.alertlevel, eventtype: f.properties.eventtype, country: f.properties.country,
         from: f.properties.fromdate, report: f.properties.url?.report, sev: f.properties.severitydata?.severitytext, cat: GDACS_CAT[f.properties.eventtype] } })) })))
     this.track(D.eonet().then(e => e.data && set('eonet', { ...e.data, features: e.data.features.map((f: any) =>
-      ({ ...f, properties: { title: f.properties.title, cat: EONET_CAT[f.properties.categories?.[0]?.id] || 'other', catTitle: f.properties.categories?.[0]?.title, date: f.properties.date, link: f.properties.sources?.[0]?.url } })) })))
+      ({ ...f, properties: { title: f.properties.title, cat: EONET_CAT[f.properties.categories?.[0]?.id] || 'other', catTitle: f.properties.categories?.[0]?.title, catId: f.properties.categories?.[0]?.id, date: f.properties.date, link: f.properties.sources?.[0]?.url } })) })))
   }
 
   private loadPeople(ind: D.Indicator) {
