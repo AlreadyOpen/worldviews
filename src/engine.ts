@@ -28,10 +28,11 @@ export const LAYERS: Record<ViewId | 'base', string[]> = {
   satellites: ['s-past', 's-next', 's-dot', 's-icon'],
   airports: ['a-rwy', 'a-dot', 'a-icon', 'a-world', 'a-world-icon'],
 }
-// Airport kinds, largest first: colour (viridis steps), size, and the icon drawn on top. Closed ones are muted grey.
+// Airport kinds, largest first: a categorical colour each (Okabe-Ito, colour-blind safe; the closest pair under simulated
+// deuteranopia, protanopia and tritanopia is still CIE76 dE 16, small vs balloon port), plus an icon and a size. Closed: muted grey.
 export const AIRPORT_TYPES: [string, string][] = [['large_airport', 'Large airport'], ['medium_airport', 'Medium airport'], ['small_airport', 'Small airport'],
   ['heliport', 'Heliport'], ['seaplane_base', 'Seaplane base'], ['balloonport', 'Balloon port'], ['closed', 'Closed']]
-export const airportColors = (V: string[], closed: string) => [V[0], V[1], V[2], V[3], V[3], V[2], closed]
+export const airportColors = (dark: boolean) => ['#0072B2', '#009E73', '#E69F00', '#CC79A7', '#56B4E9', '#F0E442', dark ? '#4a504d' : '#d2d6d3']
 // Satellite colour by altitude (km): low orbit, Starlink shells, navigation orbits, geostationary.
 export const ALT_STOPS = [400, 600, 1200, 20000, 36000]
 const EONET_CAT: Record<string, string> = { severeStorms: 'storms', floods: 'floods', drought: 'floods', wildfires: 'fire', volcanoes: 'fire' }
@@ -153,7 +154,7 @@ export class World {
       paint: { 'text-color': dark ? '#e6ebe8' : '#1d2120', 'text-halo-color': dark ? '#151918' : '#fbfcfa', 'text-halo-width': 1.5 } })
     m.addSource('apt', { type: 'vector', url: `pmtiles://${D.AIRPORTS}/airports.pmtiles`, attribution: 'OurAirports (public domain)' })
     m.addSource('rwy', { type: 'vector', url: `pmtiles://${D.AIRPORTS}/runways.pmtiles` })
-    const T: any = ['get', 'type'], AC = airportColors(RAMPS.viridis[this.theme], n.line)
+    const T: any = ['get', 'type'], AC = airportColors(dark)
     m.addSource('apt-large', { type: 'geojson', data: empty })
     m.addLayer({ id: 'a-rwy', type: 'line', source: 'rwy', 'source-layer': 'runways', layout: { ...hid, 'line-cap': 'butt' },
       paint: { 'line-color': dark ? '#c9d1cd' : '#3a403d', 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 2, 13, 10], 'line-opacity': ['case', ['to-boolean', ['coalesce', ['get', 'closed'], false]], 0.35, 0.85] } })

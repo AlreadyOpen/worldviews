@@ -31,9 +31,9 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
   const m = w.map, c = m.getCenter().toArray(), z = m.getZoom(), th = w.theme, b = m.getBounds()
   const inView = (p: number[]) => b.contains(p as any)
   if (v === 'airports') {
-    const AC = airportColors(RAMPS.viridis[th], th === 'dark' ? '#7d8481' : '#8d938f')
+    const AC = airportColors(th === 'dark')
     const legend: LegendSpec = { kind: 'items', title: 'Kind of airport', items: AIRPORT_TYPES.map(([k, label], i) => ({ k, label, color: AC[i], shape: 'dot' as const })).filter(x => x.k !== 'balloonport').map(({ k, ...x }) => x),
-      note: 'Heliports and seaplane bases share a colour; their icons differ. ' + (z < 5 ? 'At this zoom only large airports are drawn; medium ones from regional zoom, the rest from city zoom.' : z < 8 ? 'Small airports, heliports and runways appear from city zoom.' : z < 10 ? 'Closed airports appear when you zoom in further.' : 'Lines are runways.') }
+      note: (z < 5 ? 'At this zoom only large airports are drawn; medium ones from regional zoom, the rest from city zoom.' : z < 8 ? 'Small airports, heliports and runways appear from city zoom.' : z < 10 ? 'Closed airports appear when you zoom in further.' : 'Lines are runways.') }
     const la = await D.largeAirports()
     // the counts come from drawn tiles: wait for this view's tiles (capped, 'idle' may never fire again)
     if (!m.areTilesLoaded()) await Promise.race([m.once('idle'), new Promise(r => setTimeout(r, 4000))])
