@@ -2,8 +2,8 @@
 // (viridis, inferno, cividis families) and every ramp has a second channel: height, size or a label.
 // 'rules' runs on RISE (CC BY 4.0) in both editions; the full edition adds a noncommercial detail source as one more
 // sub-choice. Every branch for that source is dead code in WorldViews Libre, so its copy and URL are not in the bundle.
-export type ViewId = 'height' | 'hazards' | 'transit' | 'people' | 'business' | 'rules' | 'satellites'
-export const VIEW_IDS: ViewId[] = ['height', 'hazards', 'transit', 'people', 'business', 'rules', 'satellites']
+export type ViewId = 'height' | 'hazards' | 'transit' | 'people' | 'business' | 'rules' | 'satellites' | 'airports'
+export const VIEW_IDS: ViewId[] = ['height', 'hazards', 'transit', 'people', 'business', 'rules', 'satellites', 'airports']
 
 export const VIEWS: Record<ViewId, {
   question: string; noun: string; topic: string; icon: string
@@ -26,6 +26,8 @@ export const VIEWS: Record<ViewId, {
   satellites: { question: 'What is overhead?', noun: 'Satellites', topic: 'Space', icon: 'tabler:satellite',
     subs: [{ id: 'stations', label: 'Space stations' }, { id: 'visual', label: 'Brightest' }, { id: 'gnss', label: 'Navigation (GNSS)' },
       { id: 'weather', label: 'Weather' }, { id: 'starlink', label: 'Starlink' }] },
+  airports: { question: 'Where can I fly from?', noun: 'Airports', topic: 'Flying', icon: 'ph:airplane-takeoff',
+    subs: [{ id: 'all', label: 'Every airport' }] },
   rules: { question: 'What do building energy rules require?', noun: 'Building rules', topic: 'Building rules', icon: 'ph:leaf',
     subs: [{ id: 'BEC', label: 'Building Energy Codes' }, { id: 'ELS', label: 'Energy Labeling Systems' },
       { id: 'MEEP', label: 'Minimum Energy Efficiency Performance Standards' }, { id: 'IMPS', label: 'Energy Efficiency in Public Sector' },
@@ -63,6 +65,7 @@ export const SOURCES = {
     licence: 'Noncommercial use with attribution (World Bank). World Bank. 2025. Unlocking Efficiency: The Global Landscape of Building Energy Regulations and their Enforcement. © World Bank', sub: 'bg' }] : [])],
   satellites: [{ name: "CelesTrak (GP data from the US Space Force's space-track.org); positions computed with satellite.js", href: 'https://celestrak.org/NORAD/elements/',
     licence: 'Refetched at most every 2 hours, per the CelesTrak usage policy; satellite.js MIT' }],
+  airports: [{ name: 'OurAirports, via AlreadyOpen world-airports', href: 'https://ourairports.com/data/', licence: 'Public domain' }],
   business: [{ name: 'World Bank, B-READY (Business Ready)', href: 'https://www.worldbank.org/en/businessready', licence: 'CC BY 4.0' }],
 }
 

@@ -9,7 +9,7 @@ import { HEIGHT_STOPS, MAG_STOPS, RAMPS, VIEWS, VIEW_IDS, type ViewId, HK, inHK 
 let protocol = false
 export type Theme = 'light' | 'dark'
 export type EngineState = { views: ViewId[]; base: boolean; sub: Partial<Record<ViewId, string>>; time: 't1' | 't2' | 't3'; hour: number; day: number }
-export type Pick = { view: ViewId; title: string; rows: [string, string][]; href?: string; source: string }
+export type Pick = { view: ViewId; title: string; rows: [string, string][]; href?: string; source: string; links?: [string, string][] }
 
 const STYLE = { light: 'https://tiles.openfreemap.org/styles/positron', dark: 'https://tiles.openfreemap.org/styles/dark' }
 const SKY_FILES = [['overture', 'Overture Maps (ODbL), © OpenStreetMap contributors'], ['hk', 'Lands Department, CSDI Portal (Government of the HKSAR)'],
@@ -26,7 +26,12 @@ export const LAYERS: Record<ViewId | 'base', string[]> = {
   business: ['bz-fill', 'bz-line'],
   rules: ['r-fill', 'r-line'],
   satellites: ['s-past', 's-next', 's-dot', 's-icon'],
+  airports: ['a-rwy', 'a-dot', 'a-icon', 'a-world', 'a-world-icon'],
 }
+// Airport kinds, largest first: colour (viridis steps), size, and the icon drawn on top. Closed ones are muted grey.
+export const AIRPORT_TYPES: [string, string][] = [['large_airport', 'Large airport'], ['medium_airport', 'Medium airport'], ['small_airport', 'Small airport'],
+  ['heliport', 'Heliport'], ['seaplane_base', 'Seaplane base'], ['balloonport', 'Balloon port'], ['closed', 'Closed']]
+export const airportColors = (V: string[], closed: string) => [V[0], V[1], V[2], V[3], V[3], V[2], closed]
 // Satellite colour by altitude (km): low orbit, Starlink shells, navigation orbits, geostationary.
 export const ALT_STOPS = [400, 600, 1200, 20000, 36000]
 const EONET_CAT: Record<string, string> = { severeStorms: 'storms', floods: 'floods', drought: 'floods', wildfires: 'fire', volcanoes: 'fire' }
@@ -146,6 +151,19 @@ export class World {
     m.addLayer({ id: 'z-quake-label', type: 'symbol', source: 'quakes', filter: ['>=', ['get', 'mag'], 5], layout: { ...hid,
       'text-field': ['concat', 'M', ['to-string', ['get', 'mag']]], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.4] },
       paint: { 'text-color': dark ? '#e6ebe8' : '#1d2120', 'text-halo-color': dark ? '#151918' : '#fbfcfa', 'text-halo-width': 1.5 } })
+    m.addSource('apt', { type: 'vector', url: `pmtiles://${D.AIRPORTS}/airports.pmtiles`, attribution: 'OurAirports (public domain)' })
+    m.addSource('rwy', { type: 'vector', url: `pmtiles://${D.AIRPORTS}/runways.pmtiles` })
+    const T: any = ['get', 'type'], AC = airportColors(RAMPS.viridis[this.theme], n.line)
+    m.addSource('apt-large', { type: 'geojson', data: empty })
+    m.addLayer({ id: 'a-rwy', type: 'line', source: 'rwy', 'source-layer': 'runways', layout: { ...hid, 'line-cap': 'butt' },
+      paint: { 'line-color': dark ? '#c9d1cd' : '#3a403d', 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 2, 13, 10], 'line-opacity': ['case', ['to-boolean', ['coalesce', ['get', 'closed'], false]], 0.35, 0.85] } })
+    m.addLayer({ id: 'a-dot', type: 'circle', source: 'apt', 'source-layer': 'airports', layout: { ...hid, 'circle-sort-key': ['match', T, 'large_airport', 3, 'medium_airport', 2, 'closed', 0, 1] },
+      paint: { 'circle-color': ['match', T, ...AIRPORT_TYPES.flatMap(([k], i) => [k, AC[i]]), AC[2]],
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, ['match', T, 'large_airport', 6, 'medium_airport', 5, 4], 10, ['match', T, 'large_airport', 9, 'medium_airport', 8, 'closed', 5, 7]],
+        'circle-opacity': ['case', ['==', T, 'closed'], 0.55, 0.92], 'circle-stroke-color': dark ? '#151918' : '#fbfcfa', 'circle-stroke-width': 1 } })
+    // The tiles start at z2: below that, the large airports (already loaded for "nearest") come from a GeoJSON copy
+    m.addLayer({ id: 'a-world', type: 'circle', source: 'apt-large', maxzoom: 2, layout: hid,
+      paint: { 'circle-color': AC[0], 'circle-radius': 4, 'circle-opacity': 0.92, 'circle-stroke-color': dark ? '#151918' : '#fbfcfa', 'circle-stroke-width': 1 } })
     const iss = dark ? '#e6ebe8' : '#1d2120'
     m.addLayer({ id: 's-past', type: 'line', source: 'iss-past', layout: hid, paint: { 'line-color': iss, 'line-width': 1.5, 'line-opacity': 0.7, 'line-dasharray': [2, 2] } })
     m.addLayer({ id: 's-next', type: 'line', source: 'iss-next', layout: hid, paint: { 'line-color': iss, 'line-width': 2, 'line-opacity': 0.85 } })
@@ -162,6 +180,10 @@ export class World {
     icon('z-gdacs-icon', 'gdacs', GDACS_ICON, ['*', 0.17, sev], '#fff')
     icon('z-eonet-icon', 'eonet', EONET_ICON, 0.2, dark ? '#d8dedb' : '#2c3330')
     icon('s-icon', 'sats', 'i-satellite', ['interpolate', ['linear'], ['zoom'], 1, ['case', ['get', 'iss'], 0.3, 0.17], 6, ['case', ['get', 'iss'], 0.44, 0.27]], '#fff')
+    icon('a-icon', 'apt', ['match', T, 'heliport', 'i-heli', 'seaplane_base', 'i-anchor', 'balloonport', 'i-balloon', 'i-plane'],
+      ['interpolate', ['linear'], ['zoom'], 2, ['match', T, 'large_airport', 0.19, 'medium_airport', 0.15, 0.12], 10, ['match', T, 'large_airport', 0.28, 'medium_airport', 0.24, 'closed', 0.15, 0.2]],
+      ['case', ['==', T, 'closed'], dark ? '#151918' : '#fbfcfa', '#fff'], { 'source-layer': 'airports' })
+    icon('a-world-icon', 'apt-large', 'i-plane', 0.12, '#fff', { maxzoom: 2 })
     icon('t-mtr-st-icon', 'mtr-st', 'i-subway', ['interpolate', ['linear'], ['zoom'], 11, 0.16, 15, 0.3], ['get', 'color'], { minzoom: 11 })
     this.apply(this.state, true)
   }
@@ -183,6 +205,8 @@ export class World {
     if (s.views.includes('rules') && (force || prev.sub.rules !== s.sub.rules || !prev.views.includes('rules'))) this.loadRules(s.sub.rules || 'BEC')
     if (s.views.includes('satellites')) { if (force || prev.sub.satellites !== s.sub.satellites || !prev.views.includes('satellites')) this.loadSats(s.sub.satellites || 'stations') }
     else if (this.satTimer) { clearInterval(this.satTimer); this.satTimer = 0 }
+    if (s.views.includes('airports')) this.track(D.largeAirports().then(f => { if (f.data && this.installed) (this.map.getSource('apt-large') as any)?.setData({ type: 'FeatureCollection',
+      features: f.data.map(a => ({ type: 'Feature', properties: a.props, geometry: { type: 'Point', coordinates: [a.lon, a.lat] } })) }) }))
     if (s.views.includes('transit')) this.loadBus()
     this.filters()
     this.onUpdate?.()
@@ -286,7 +310,7 @@ export class World {
       this.onPick?.(null)
       // Thousands of points (Starlink): plain small dots, no icons, so the globe stays readable; icons for small groups.
       const many = this.sats.length > 500
-      this.map.setFilter('s-icon', many ? ['==', 1, 0] : null)
+      this.map.setFilter('s-icon', many ? ['has', '__none__'] : null)   // a filter that matches nothing
       this.map.setPaintProperty('s-dot', 'circle-radius', many ? ['interpolate', ['linear'], ['zoom'], 1, 1.4, 6, 3.5]
         : ['interpolate', ['linear'], ['zoom'], 1, ['case', ['get', 'iss'], 9, 5], 6, ['case', ['get', 'iss'], 13, 8]])
       this.map.setPaintProperty('s-dot', 'circle-stroke-width', many ? 0 : 1)
@@ -364,6 +388,12 @@ export class World {
       if (s) return this.onPick?.({ view: 'satellites', title: s.name, source: 'CelesTrak GP data; position computed with satellite.js', href: `https://celestrak.org/satcat/table-satcat.php?CATNR=${s.id}`,
         rows: [['NORAD id', String(s.id)], ['Altitude', q ? `${Math.round(q.alt).toLocaleString('en')} km` : 'Not computed'], ['Speed', q ? `${q.speed.toFixed(2)} km/s` : 'Not computed'],
           ['Element epoch', `${s.epoch.replace('T', ' ').slice(0, 16)} UTC`]] }) }
+    if (id === 'a-dot' || id === 'a-icon' || id === 'a-world' || id === 'a-world-icon') {
+      const elev = p.elevation_ft != null ? `${Number(p.elevation_ft).toLocaleString('en')} ft (${Math.round(p.elevation_ft * 0.3048).toLocaleString('en')} m)` : 'Not published'
+      return this.onPick?.({ view: 'airports', title: p.name, source: 'OurAirports (public domain)', href: `https://ourairports.com/airports/${p.ident}/`,
+        rows: [['ICAO', p.icao_code || p.gps_code || 'None'], ['IATA', p.iata_code || 'None'], ['Type', AIRPORT_TYPES.find(([k]) => k === p.type)?.[1] || p.type],
+          ['Elevation', elev], ['Municipality', p.municipality || 'Not published']],
+        links: [...(p.wikipedia_link ? [['Wikipedia', p.wikipedia_link]] : []), ...(p.home_link ? [['Home page', p.home_link]] : [])] as [string, string][] }) }
     if (id === 'bz-fill') { const iso = D.isoOf(p), r = this.bizBy[iso], t = this.state.sub.business || 'BE'
       return this.onPick?.({ view: 'business', title: p.NAME, source: 'World Bank, B-READY (CC BY 4.0)', href: 'https://www.worldbank.org/en/businessready',
         rows: [[`${VIEWS.business.subs.find(x => x.id === t)?.label}, score`, r ? `${Math.round(r.v * 10) / 10} of 100` : 'Not covered by B-READY yet'], ['Year', r?.year || 'None']] }) }

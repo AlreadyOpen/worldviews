@@ -151,6 +151,35 @@ export const breadyOverall = async (iso3: string) => {
   const v = ps.map(p => p.data?.by[iso3]?.v)
   return v.every(x => x != null) ? (v as number[]).reduce((a, b) => a + b) / 3 : null
 }
+// Airports: OurAirports (public domain) as vector tiles from AlreadyOpen/world-airports. Fields are the OurAirports columns
+// (ident, type, name, latitude_deg, longitude_deg, elevation_ft, municipality, icao_code, iata_code, home_link, wikipedia_link...).
+export const AIRPORTS = 'https://huggingface.co/buckets/alreadyopen/world-airports/resolve'
+export type Airport = { id: number; name: string; iata?: string; icao?: string; lon: number; lat: number; props: any }
+// Every large airport (about 1,240) from the 16 tiles at z2, where only large airports are drawn: enough to find the nearest
+// one to any point without a separate file.
+// Only the fields the view shows (a plain copy: MapLibre's worker could not serialise the decoded tile's properties object)
+const APT_FIELDS = ['id', 'ident', 'type', 'name', 'icao_code', 'gps_code', 'iata_code', 'elevation_ft', 'municipality', 'home_link', 'wikipedia_link', 'latitude_deg', 'longitude_deg']
+export const largeAirports = () => once('large-airports', async () => {
+  const [{ PMTiles }, { VectorTile }, { PbfReader }] = await Promise.all([import('pmtiles'), import('@mapbox/vector-tile'), import('pbf')])
+  const p = new PMTiles(`${AIRPORTS}/airports.pmtiles`), by = new Map<number, Airport>()
+  await Promise.all([...Array(16).keys()].map(async i => {
+    const t = await p.getZxy(2, i % 4, i >> 2)
+    const l = t && new VectorTile(new PbfReader(new Uint8Array(t.data))).layers.airports
+    for (let j = 0; l && j < l.length; j++) {
+      const q: any = l.feature(j).properties
+      if (q.type === 'large_airport') by.set(q.id, { id: q.id, name: q.name, iata: q.iata_code, icao: q.icao_code, lon: q.longitude_deg, lat: q.latitude_deg,
+        props: Object.fromEntries(APT_FIELDS.map(k => [k, q[k] ?? null])) })
+    }
+  }))
+  return [...by.values()]
+})
+export const kmBetween = ([x1, y1]: number[], [x2, y2]: number[]) => {
+  const r = Math.PI / 180, h = Math.sin(((y2 - y1) * r) / 2) ** 2 + Math.cos(y1 * r) * Math.cos(y2 * r) * Math.sin(((x2 - x1) * r) / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+export const nearestLarge = (all: Airport[], c: number[]) =>
+  all.reduce<{ a: Airport; km: number } | null>((best, a) => { const km = kmBetween(c, [a.lon, a.lat]); return !best || km < best.km ? { a, km } : best }, null)
+
 export const mtr = () => once('mtr', () => json(`${TRANSIT}/mtr.json`))
 export const busIndex = () => once('bus-index', () => json(`${TRANSIT}/bus/index.json`))
 

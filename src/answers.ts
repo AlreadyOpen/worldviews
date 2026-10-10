@@ -1,7 +1,7 @@
 // What each view answers right now, for the current camera: one number, what it counts, and the state behind it.
 import * as D from './data'
 import * as Sat from './sats'
-import { ALT_STOPS, LAYERS, type World } from './engine'
+import { AIRPORT_TYPES, ALT_STOPS, LAYERS, airportColors, type World } from './engine'
 import { HEIGHT_STOPS, HK, INDICATORS_NOTE, MAG_STOPS, RAMPS, VIEWS, inHK, type ViewId } from './views'
 import type { LegendSpec } from './legend'
 
@@ -30,6 +30,22 @@ const km = (a: number[], b: number[]) => {
 export async function answer(w: World, v: ViewId): Promise<Answer> {
   const m = w.map, c = m.getCenter().toArray(), z = m.getZoom(), th = w.theme, b = m.getBounds()
   const inView = (p: number[]) => b.contains(p as any)
+  if (v === 'airports') {
+    const AC = airportColors(RAMPS.viridis[th], th === 'dark' ? '#7d8481' : '#8d938f')
+    const legend: LegendSpec = { kind: 'items', title: 'Kind of airport', items: AIRPORT_TYPES.map(([k, label], i) => ({ k, label, color: AC[i], shape: 'dot' as const })).filter(x => x.k !== 'balloonport').map(({ k, ...x }) => x),
+      note: 'Heliports and seaplane bases share a colour; their icons differ. ' + (z < 5 ? 'At this zoom only large airports are drawn; medium ones from regional zoom, the rest from city zoom.' : z < 8 ? 'Small airports, heliports and runways appear from city zoom.' : z < 10 ? 'Closed airports appear when you zoom in further.' : 'Lines are runways.') }
+    const la = await D.largeAirports()
+    // the counts come from drawn tiles: wait for this view's tiles (capped, 'idle' may never fire again)
+    if (!m.areTilesLoaded()) await Promise.race([m.once('idle'), new Promise(r => setTimeout(r, 4000))])
+    const fs = m.getLayer('a-dot') && m.getLayoutProperty('a-dot', 'visibility') === 'visible' ? m.queryRenderedFeatures({ layers: ['a-dot', 'a-world'] }) : []
+    const seen = new Map<any, string>()
+    for (const f of fs) seen.set((f.properties as any).id, (f.properties as any).type)
+    const by = AIRPORT_TYPES.map(([k, label]) => [label, [...seen.values()].filter(t => t === k).length] as const).filter(([, n]) => n)
+    const near = la.data && D.nearestLarge(la.data, c)
+    const nearLine = near ? ` Nearest large airport to the map centre: ${near.a.name}${near.a.iata ? ` (${near.a.iata})` : ''}, ${nf.format(Math.round(near.km))} km.` : la.error ? ` Nearest large airport not available: ${la.error}.` : ''
+    return { status: seen.size ? 'ok' : w.pending.size ? 'loading' : 'empty', legend, updated: 'OurAirports, updated daily by AlreadyOpen world-airports', value: nf.format(seen.size),
+      counts: 'airports drawn in view', detail: `${by.map(([l, n]) => `${nf.format(n)} ${l === 'Closed' ? 'closed' : l.toLowerCase() + (n > 1 ? 's' : '')}`).join(', ') || 'None in view'}.${nearLine}` }
+  }
   if (v === 'satellites') {
     const grp = w.state.sub.satellites || 'stations', label = Sat.SAT_GROUPS[grp]
     const f = await Sat.gp(grp)

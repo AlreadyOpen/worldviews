@@ -412,6 +412,7 @@ function AnswerPanel({ s, setS, view, a, all, pick, clearPick, jump, collapsed, 
         <section className="pick" aria-label="Selected">
           <h3>{pick.title}<button className="icon-btn" style={{ width: 26, height: 26 }} aria-label="Clear selection" onClick={clearPick}><iconify-icon icon="ph:x" width="14" /></button></h3>
           <dl>{pick.rows.map(([k, v]) => <div key={k} style={{ display: 'contents' }}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
+          {pick.links?.length ? <p className="meta">{pick.links.map(([k, u]) => <a key={k} href={u} target="_blank" rel="noreferrer" style={{ marginRight: 12 }}>{k}</a>)}</p> : null}
           <p className="meta">Source: {pick.source}{pick.href && <> · <a href={pick.href} target="_blank" rel="noreferrer">open</a></>}</p>
         </section>
       )}
@@ -448,6 +449,8 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
         ['Aged 65+', val(2) ? `${nf.format(val(2)!.v)}%` : 'None'], ['In towns and cities', val(3) ? `${nf.format(val(3)!.v)}%` : 'None']]
       const biz = await D.breadyOverall(p.ISO3_CODE)
       // B-READY publishes no single score: this is the mean of its three pillars across the ten topics
+      const la = p.ISO3_CODE !== 'WLD' ? (await D.largeAirports()).data : undefined, near = la && D.nearestLarge(la, center)
+      stats.push(['Airports nearby', near ? `${near.a.iata || near.a.icao || near.a.name}, ${Math.round(near.km).toLocaleString('en')} km` : 'None'])
       // Satellites overhead at the map centre (more than 10° up): the open group if the view is on, else the space stations
       if (p.ISO3_CODE !== 'WLD') {
         const grp = s.view === 'satellites' ? s.sub.satellites || 'stations' : 'stations', f = (await Sat.gp(grp)).data, t = new Date(), g = Sat.gstime(t)

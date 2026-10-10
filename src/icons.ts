@@ -21,6 +21,7 @@ import caretDown from '@iconify-icons/ph/caret-down'
 Object.entries({ buildings, 'warning-circle': warning, train, 'users-three': users, 'squares-four': squares, x, 'sliders-horizontal': sliders,
   'arrow-right': arrow, sun, moon, desktop, 'magnifying-glass': search, 'globe-hemisphere-east': globe, 'check-bold': check, briefcase, leaf, 'caret-down': caretDown }).forEach(([n, d]) => addIcon('ph:' + n, d))
 addIcon('tabler:satellite', satellite)
+addIcon('ph:airplane-takeoff', takeoffLine)
 
 // Map point icons (Helen, 2026-10-10: iconify icons for markers, the /map pattern): the data keeps its coloured circle, and an
 // Iconify icon is drawn on top as an SDF image. The <svg> is built by hand from the icon data: svgToURL(iconToHTML(...))
@@ -35,9 +36,15 @@ import snowflake from '@iconify-icons/ph/snowflake-bold'
 import warn from '@iconify-icons/ph/warning-bold'
 import subway from '@iconify-icons/ph/subway-bold'
 import satellite from '@iconify-icons/tabler/satellite'
+import takeoff from '@iconify-icons/ph/airplane-takeoff-bold'
+import takeoffLine from '@iconify-icons/ph/airplane-takeoff'
+import helicopter from '@iconify-icons/tabler/helicopter'
+import anchor from '@iconify-icons/ph/anchor-bold'
+import balloon from '@iconify-icons/tabler/balloon'
 export const MAP_ICONS: Record<string, { body: string; width?: number; height?: number }> = {
   'i-pulse': pulse, 'i-hurricane': hurricane, 'i-drop': drop, 'i-sun-dim': sunDim, 'i-fire': fire, 'i-mountains': mountains,
-  'i-snowflake': snowflake, 'i-warning': warn, 'i-subway': subway, 'i-satellite': satellite }
+  'i-snowflake': snowflake, 'i-warning': warn, 'i-subway': subway, 'i-satellite': satellite,
+  'i-plane': takeoff, 'i-heli': helicopter, 'i-anchor': anchor, 'i-balloon': balloon }
 
 export async function iconImage(d: { body: string; width?: number; height?: number }, px = 64) {
   const w = d.width || 16, h = d.height || 16
