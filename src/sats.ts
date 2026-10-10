@@ -1,6 +1,6 @@
 // Satellites: CelesTrak GP elements (OMM JSON), propagated in the browser with satellite.js (SGP4). CelesTrak's usage policy
 // (celestrak.org/usage-policy.php): download a group at most once per update (every 2 hours), and stop asking after any
-// non-200 answer. So each group is cached in memory and in localStorage with its time, and a failure is cached too.
+// non-200 answer. So each group is cached in memory and in Cache Storage with its time (see gp()), and a failure is cached too.
 import { json2satrec, propagate, gstime, eciToGeodetic, eciToEcf, ecfToLookAngles, degreesLat, degreesLong, degreesToRadians, type SatRec } from 'satellite.js'
 import { once } from './data'
 
@@ -8,18 +8,24 @@ export const SAT_GROUPS: Record<string, string> = { stations: 'Space stations', 
 const TTL = 2 * 3600e3
 export type Sat = { name: string; id: number; epoch: string; rec: SatRec }
 
+// Every group goes to the browser's Cache Storage ('celestrak'), whose quota is far above localStorage's 5 MB (Starlink is
+// ~4.7 MB), so a reload within 2 hours reuses it instead of asking CelesTrak again. The fetch time rides along as a
+// header. A failure is cached the same way (stored with its status), so a refused request is not repeated for 2 hours.
+// Without Cache Storage (private mode, old browser) it falls back to a plain fetch, still once per page visit (once()).
 export const gp = (group: string) => once('gp-' + group, async () => {
-  const key = 'celestrak-gp-' + group
-  let c: any = null
-  try { c = JSON.parse(localStorage.getItem(key) || 'null') } catch { c = null }
-  if (!c || Date.now() - c.at >= TTL) {
-    const r = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=json`)
+  const url = `https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=json`
+  let store: Cache | null = null, c: any = null
+  try {
+    store = await caches.open('celestrak')
+    const hit = await store.match(url)
+    const at = Number(hit?.headers.get('x-fetched-at'))
+    if (hit && Date.now() - at < TTL) c = { at, ...(await hit.json()) }
+  } catch { c = null }
+  if (!c) {
+    const r = await fetch(url)
     c = r.ok ? { at: Date.now(), rows: await r.json() } : { at: Date.now(), error: `celestrak.org answered ${r.status}, not asking again for 2 hours` }
-    // localStorage only for groups under about 1 MB, so other caches keep their room. Bigger groups (Starlink, ~4.7 MB) stay in
-    // memory only (once() above): fetched at most once per page visit, so a reload within 2 hours fetches it again.
-    const text = JSON.stringify(c)
-    if (text.length < 1e6) try { localStorage.setItem(key, text) } catch { /* quota or private mode: the memory copy still holds for this visit */ }
-    else try { localStorage.removeItem(key) } catch { /* nothing stored */ }
+    try { await store?.put(url, new Response(JSON.stringify(c.error ? { error: c.error } : { rows: c.rows }), { headers: { 'content-type': 'application/json', 'x-fetched-at': String(c.at) } })) }
+    catch { /* quota or no Cache Storage: the memory copy still holds for this visit */ }
   }
   if (c.error) throw new Error(c.error)
   const sats: Sat[] = c.rows.map((o: any) => ({ name: o.OBJECT_NAME, id: o.NORAD_CAT_ID, epoch: o.EPOCH, rec: json2satrec(o) }))
