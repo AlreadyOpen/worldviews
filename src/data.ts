@@ -79,8 +79,8 @@ export const worldBank = (ind: Indicator) => once('wb-' + ind, async () => {
   // Places the World Bank leaves out, from their own official statistics (once() returns {data, error}; error = skipped)
   const own = (await smallPlaces()).data || []
   for (const o of own) if (!by[o.iso3] && (o as any)[ind] != null) by[o.iso3] = { v: (o as any)[ind], year: o.year, src: o.src }
-  // Last resort, population only: Natural Earth's estimate, labelled, so no place is blank (Helen, 2026-10-10: option 4,
-  // official sources first, then this). Places with no residents (estimate 0) stay without a figure.
+  // Last resort, population only: Natural Earth's estimate, labelled, so no place is blank (official sources
+  // come first, then this). Places with no residents (estimate 0) stay without a figure.
   if (ind === 'population') {
     const cs = (await countries()).data
     for (const f of cs?.features || []) {
@@ -94,7 +94,7 @@ export const worldBank = (ind: Indicator) => once('wb-' + ind, async () => {
 // Official figures for places the World Bank leaves out, from AlreadyOpen/world-places (weekly pipeline: each place's own
 // statistics office; some cannot be read from a browser, e.g. Åland's and Jersey's). One JSON per source, listed in index.json.
 export const PLACES = 'https://huggingface.co/buckets/alreadyopen/world-places/resolve'
-// Two sites from one codebase (Helen, 2026-10-10): WorldViews Libre uses open-licence sources only; WorldViews also reads
+// Two sites from one codebase: WorldViews Libre uses open-licence sources only; WorldViews also reads
 // sources with no open licence (the nc places dataset). Chosen at build time (PUBLIC_EDITION=libre|full); in the libre build the
 // nc branch is dead code and its URL is not in the bundle.
 export const EDITION = import.meta.env.PUBLIC_EDITION === 'full' ? 'full' : 'libre'

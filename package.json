@@ -7,7 +7,8 @@
     "dev:full": "PUBLIC_EDITION=full rsbuild dev --port 8761",
     "build": "PUBLIC_EDITION=libre rsbuild build",
     "build:full": "PUBLIC_EDITION=full rsbuild build",
-    "start": "node .output/server/index.mjs"
+    "deploy": "npm run build && wrangler pages deploy dist-libre/client --project-name worldviews-libre",
+    "deploy:full": "npm run build:full && wrangler pages deploy dist-full/client --project-name worldviews"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
@@ -25,5 +26,9 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "satellite.js": "7.1.0"
-  }
+  },
+  "devDependencies": {
+    "wrangler": "4.141.0"
+  },
+  "license": "Apache-2.0"
 }

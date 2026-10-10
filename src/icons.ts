@@ -23,9 +23,9 @@ Object.entries({ buildings, 'warning-circle': warning, train, 'users-three': use
 addIcon('tabler:satellite', satellite)
 addIcon('ph:airplane-takeoff', takeoffLine)
 
-// Map point icons (Helen, 2026-10-10: iconify icons for markers, the /map pattern): the data keeps its coloured circle, and an
+// Map point icons: the data keeps its coloured circle, and an
 // Iconify icon is drawn on top as an SDF image. The <svg> is built by hand from the icon data: svgToURL(iconToHTML(...))
-// produced an image Chrome refused to decode (world-40, hk-ifcx gis/src/icons.ts).
+// produced an image Chrome refused to decode.
 import pulse from '@iconify-icons/ph/pulse-bold'
 import hurricane from '@iconify-icons/ph/hurricane-bold'
 import drop from '@iconify-icons/ph/drop-bold'

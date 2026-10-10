@@ -109,7 +109,7 @@ export class World {
           paint: { 'fill-extrusion-color': color as any, 'fill-extrusion-height': OH, 'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0], 'fill-extrusion-opacity': 0.92 } })
     }
     const empty: any = { type: 'FeatureCollection', features: [] }
-    // Natural Earth 1:10m outlines as tiles (AlreadyOpen world-places): 1:50m sat km off at city zoom (Macau, Helen 2026-10-10)
+    // Natural Earth 1:10m outlines as tiles (AlreadyOpen world-places): 1:50m sat km off at city zoom (Macau)
     m.addSource('people', { type: 'vector', url: `pmtiles://${D.PLACES}/countries.pmtiles`,
       attribution: 'World Bank (CC BY 4.0); official statistics via AlreadyOpen world-places; Natural Earth' })
     m.addLayer({ id: 'countries-hit', type: 'fill', source: 'people', 'source-layer': 'countries', paint: { 'fill-opacity': 0 } })

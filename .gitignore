@@ -1,6 +1,10 @@
 node_modules/
 dist/
+dist-libre/
+dist-full/
 .output/
-dev.log
+.wrangler/
+*.log
 *chrome*profile*
-dev-full.log
+.env
+.env.*
