@@ -114,9 +114,9 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
   const place = D.placeAt(cs.data, c)
   if (!place) return { status: 'empty', legend, updated: `World Bank, updated ${wb.data.updated}`, detail: 'The centre of the map is over the sea. Move it onto land, or click a country.' }
   const r = wb.data.by[place.ISO3_CODE]
-  if (!r) return { status: 'empty', legend, detail: `No World Bank value for ${place.NAME_ENGL}.` }
+  if (!r) return { status: 'empty', legend, detail: `No published figure for ${place.NAME_ENGL}.` }
   const sorted = [...new Set(cs.data.features.map((f: any) => f.properties.ISO3_CODE))].map(k => wb.data!.by[k as string]?.v).filter(x => x != null).sort((a, b) => b - a)
-  return { status: 'ok', legend, updated: place.ISO3_CODE === 'TWN' ? `${D.TW_SOURCE.name}, ${r.year}` : `World Bank, updated ${wb.data.updated}`, value: ind === 'population' ? big.format(r.v) : nf.format(r.v),
+  return { status: 'ok', legend, updated: r.src ? `${r.src}, ${r.year}` : `World Bank, updated ${wb.data.updated}`, value: ind === 'population' ? big.format(r.v) : nf.format(r.v),
     counts: `${meta.unit}, ${place.NAME_ENGL} (${r.year})`, detail: `${ordinal(sorted.indexOf(r.v) + 1)} of ${sorted.length} countries and territories with a value.` }
 }
 

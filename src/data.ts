@@ -57,7 +57,7 @@ export const countries = () => once('countries', async () => {
   const d = await json('https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@v5.1.2/geojson/ne_50m_admin_0_countries.geojson')
   for (const f of d.features) {
     const p = f.properties, a3 = p.ISO_A3_EH !== '-99' ? p.ISO_A3_EH : p.ADM0_A3
-    f.properties = { NAME_ENGL: p.NAME, ISO3_CODE: a3 === 'KOS' ? 'XKX' : a3 }
+    f.properties = { NAME_ENGL: p.NAME, ISO3_CODE: a3 === 'KOS' ? 'XKX' : a3, POP_EST: p.POP_EST, POP_YEAR: p.POP_YEAR }
   }
   return d
 })
@@ -73,13 +73,38 @@ export type Indicator = keyof typeof INDICATORS
 // World Bank: the latest value of one indicator for every country, keyed by ISO3.
 export const worldBank = (ind: Indicator) => once('wb-' + ind, async () => {
   const [meta, rows] = await json(`https://api.worldbank.org/v2/country/all/indicator/${INDICATORS[ind].id}?format=json&mrnev=1&per_page=400`)
-  const by: Record<string, { v: number; year: string }> = {}
+  // src: who published a figure that is not the World Bank's (shown next to it)
+  const by: Record<string, { v: number; year: string; src?: string }> = {}
   for (const r of rows || []) if (r.value != null && r.countryiso3code) by[r.countryiso3code] = { v: r.value, year: r.date }
-  // The World Bank publishes nothing for Taiwan; use Taiwan's own household registration figures (urban share: none published there).
-  const tw = (await taiwan()).data                                    // once() returns {data, error}; error = no Taiwan figures
-  const twv = tw && { population: tw.people, aged: tw.aged, density: tw.people / TW_KM2 }[ind as string]
-  if (tw && twv != null) by.TWN = { v: twv, year: tw.month }
+  // Places the World Bank leaves out, from their own official statistics (once() returns {data, error}; error = skipped)
+  const tw = (await taiwan()).data, own = [...((await smallPlaces()).data || [])]
+  if (tw) own.push({ iso3: 'TWN', population: tw.people, aged: tw.aged, density: tw.people / TW_KM2, year: tw.month, src: TW_SOURCE.name })
+  for (const o of own) if (!by[o.iso3] && (o as any)[ind] != null) by[o.iso3] = { v: (o as any)[ind], year: o.year, src: o.src }
+  // Last resort, population only: Natural Earth's estimate, labelled, so no place is blank (Helen, 2026-10-10: option 4,
+  // official sources first, then this). Places with no residents (estimate 0) stay without a figure.
+  if (ind === 'population') {
+    const cs = (await countries()).data
+    for (const f of cs?.features || []) {
+      const p = f.properties
+      if (!by[p.ISO3_CODE] && p.POP_EST > 0) by[p.ISO3_CODE] = { v: p.POP_EST, year: String(p.POP_YEAR), src: 'Natural Earth estimate' }
+    }
+  }
   return { by, updated: meta.lastupdated as string }
+})
+
+// Official figures for places the World Bank leaves out, where the statistics office has a browser-readable API (CORS):
+// the Pacific Community (SPC) .Stat for Cook Islands, Niue, Wallis and Futuna and Pitcairn (mid-year estimates).
+type Own = { iso3: string; population?: number; aged?: number; density?: number; year: string; src: string }
+export const smallPlaces = () => once('small-places', async () => {
+  const out: Own[] = []
+  const spc = { CK: 'COK', NU: 'NIU', WF: 'WLF', PN: 'PCN' } as Record<string, string>
+  const csv: string = await fetch(`https://stats-sdmx-disseminate.pacificdata.org/rest/data/SPC,DF_POP_PROJ,3.0/A.${Object.keys(spc).join('+')}.MIDYEARPOPEST._T._T?endPeriod=${new Date().getFullYear()}&lastNObservations=1&format=csv`).then(r => r.text())
+  const [head, ...rows] = csv.trim().split('\n').map(l => l.split(','))
+  const col = (n: string) => head.indexOf(n)
+  for (const r of rows) out.push({ iso3: spc[r[col('GEO_PICT')]], population: +r[col('OBS_VALUE')], year: r[col('TIME_PERIOD')],
+                                   src: 'Pacific Community (SPC) estimate' })
+  // Åland (ÅSUB PxWeb) answers only a JSON POST and refuses the browser's CORS preflight, so it needs a pipeline snapshot.
+  return out
 })
 
 // Taiwan, Ministry of the Interior, Department of Household Registration open data (CORS *): the latest month's population

@@ -411,7 +411,7 @@ function AnswerPanel({ s, setS, view, a, all, pick, clearPick, jump, collapsed, 
 }
 
 function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string, Answer>>; choose: (v: ViewId) => void; inside?: boolean }) {
-  const [place, setPlace] = useState<{ name: string; iso3: string; stats: [string, string][]; year?: string } | null>(null)
+  const [place, setPlace] = useState<{ name: string; iso3: string; stats: [string, string][]; year?: string; srcs: string[] } | null>(null)
   const [center, setCenter] = useState<number[]>()
   useEffect(() => {
     const m = (window as any).map
@@ -433,7 +433,8 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
       const stats: [string, string][] = [
         ['Population', val(1) ? big.format(val(1)!.v) : 'None'], ['People per km²', val(0) ? nf.format(val(0)!.v) : 'None'],
         ['Aged 65+', val(2) ? `${nf.format(val(2)!.v)}%` : 'None'], ['In towns and cities', val(3) ? `${nf.format(val(3)!.v)}%` : 'None']]
-      if (live) setPlace({ name: p.NAME_ENGL, iso3: p.ISO3_CODE, stats, year: val(1)?.year })
+      const srcs = [...new Set([0, 1, 2, 3].map(i => val(i)).filter(Boolean).map(r => r!.src || 'World Bank'))]
+      if (live) setPlace({ name: p.NAME_ENGL, iso3: p.ISO3_CODE, stats, year: val(1)?.year, srcs })
     })()
     return () => { live = false }
   }, [center?.join()])
@@ -441,7 +442,7 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
   const body = (
     <>
       <h2>{place?.name || 'Open sea'}</h2>
-      <p className="sub">{place ? place.iso3 === 'TWN' ? `${D.TW_SOURCE.name}, latest month; no urban share published` : `World Bank, latest year of each figure, ${place.iso3 === 'WLD' ? 'all countries' : 'at the centre of the map'}` : 'Move the map onto land for its numbers'}</p>
+      <p className="sub">{place ? place.iso3 === 'WLD' ? 'World Bank, latest year of each figure, all countries' : place.srcs.length ? `${place.srcs.join('; ')}, latest of each figure; None = not published` : 'No published figures for this place' : 'Move the map onto land for its numbers'}</p>
       {place && <dl className="stats">{place.stats.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
         {h?.status === 'ok' && <div><dt>Tallest in view</dt><dd>{h.value}</dd></div>}
         {t?.status === 'ok' && <div><dt>{t.counts === 'MTR lines' ? 'MTR lines' : t.counts === 'MTR stations in view' ? 'MTR stations in view' : 'Bus routes in view'}</dt><dd>{t.value}</dd></div>}
