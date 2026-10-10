@@ -1,7 +1,7 @@
 // What each view answers right now, for the current camera: one number, what it counts, and the state behind it.
 import * as D from './data'
 import { LAYERS, type World } from './engine'
-import { HEIGHT_STOPS, HK, INDICATORS_NOTE, MAG_STOPS, RAMPS, inHK, type ViewId } from './views'
+import { HEIGHT_STOPS, HK, INDICATORS_NOTE, MAG_STOPS, RAMPS, VIEWS, inHK, type ViewId } from './views'
 import type { LegendSpec } from './legend'
 
 export type Answer = {
@@ -97,6 +97,25 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
     const routes = new Set(w.busLines.filter(f => f.geometry.coordinates.some(inView)).map(f => `${f.properties.op} ${f.properties.route}`))
     return { status: routes.size || stations.size ? 'ok' : w.pending.size ? 'loading' : 'empty', legend, updated, value: nf.format(routes.size), counts: 'bus and minibus routes in view',
       detail: `${stations.size} MTR stations in view.`, ...(routes.size || stations.size ? {} : { detail: 'No routes here. Try the harbour front.', jump: { label: 'Go to Central', ...HK } }) }
+  }
+  if (v === 'business') {
+    const t = w.state.sub.business || 'BE', label = VIEWS.business.subs.find(x => x.id === t)!.label
+    const [cs, os, ...ps] = await Promise.all([D.countries(), ...['OS', 'P1', 'P2', 'P3'].map(k => D.bready(`IC.BRE.${t}.${k}`))])
+    const legend: LegendSpec = { kind: 'ramp', title: `${label}, B-READY score`, colors: RAMPS.viridis[th], ticks: ['0', '25', '50', '75', '100'],
+      note: 'Grey: not covered by B-READY yet (about 100 economies so far).' }
+    if (!cs.data || !os.data) return { status: 'error', legend, errors: [cs.error && `Natural Earth: ${cs.error}`, os.error && `World Bank: ${os.error}`].filter(Boolean) as string[] }
+    const updated = `World Bank, updated ${os.data.updated}`
+    const ranked = Object.entries(os.data.by).filter(([k]) => /^[A-Z]{3}$/.test(k)).sort((a, b) => b[1].v - a[1].v)
+    const name = (k: string) => cs.data.features.find((f: any) => f.properties.ISO3_CODE === k)?.properties.NAME_ENGL || k
+    if (z < 3 && ranked.length) return { status: 'ok', legend, updated, value: nf.format(ranked[0][1].v), counts: `of 100, highest: ${name(ranked[0][0])}`,
+      detail: `${ranked.length} economies scored. Lowest: ${name(ranked.at(-1)![0])}, ${nf.format(ranked.at(-1)![1].v)}. Click a country, or zoom in, for its score.` }
+    const place = await D.placeAt(cs.data, c)
+    if (!place) return { status: 'empty', legend, updated, detail: 'The centre of the map is over the sea. Move it onto land, or click a country.' }
+    const r = os.data.by[place.ISO3_CODE]
+    if (!r) return { status: 'empty', legend, updated, detail: `${place.NAME_ENGL}: not covered by B-READY yet.` }
+    const pillars = ps.map((p, i) => `${D.BREADY_PILLARS[i]} ${p.data?.by[place.ISO3_CODE] ? nf.format(p.data.by[place.ISO3_CODE].v) : 'None'}`).join(', ')
+    return { status: 'ok', legend, updated, value: nf.format(r.v), counts: `of 100, ${label.toLowerCase()}, ${place.NAME_ENGL} (${r.year})`,
+      detail: `${ordinal(ranked.findIndex(([k]) => k === place.ISO3_CODE) + 1)} of ${ranked.length} economies scored. Pillars: ${pillars}.` }
   }
   const ind = (w.state.sub.people || 'density') as D.Indicator
   const meta = D.INDICATORS[ind]

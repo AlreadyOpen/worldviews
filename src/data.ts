@@ -101,6 +101,21 @@ export const smallPlaces = () => once('small-places', async () => {
   return files.flatMap((f: any) => f.places.map((p: any): Own => ({ iso3: p.iso3, population: p.population, aged: p.aged_65_plus_pct,
     density: p.density_per_km2, year: p.period, src: f.publisher })))
 })
+// World Bank B-READY (CC BY 4.0): one indicator, latest value per economy, keyed by ISO3. Codes IC.BRE.<topic>.OS (topic
+// score) and .P1/.P2/.P3 (its pillars); IC.BRE.P1.RF, P2.PS, P3.OE are the three pillars across all ten topics.
+export const BREADY_PILLARS = ['Regulatory framework', 'Public services', 'Operational efficiency']
+export const bready = (id: string) => once('bre-' + id, async () => {
+  const [meta, rows] = await json(`https://api.worldbank.org/v2/country/all/indicator/${id}?format=json&mrnev=1&per_page=400`)
+  const by: Record<string, { v: number; year: string }> = {}
+  for (const r of rows || []) if (r.value != null && r.countryiso3code) by[r.countryiso3code] = { v: r.value, year: r.date }
+  return { by, updated: meta.lastupdated as string }
+})
+// "Overall" for the city card: B-READY publishes no single score, so this is the mean of its three cross-topic pillars.
+export const breadyOverall = async (iso3: string) => {
+  const ps = await Promise.all(['IC.BRE.P1.RF', 'IC.BRE.P2.PS', 'IC.BRE.P3.OE'].map(bready))
+  const v = ps.map(p => p.data?.by[iso3]?.v)
+  return v.every(x => x != null) ? (v as number[]).reduce((a, b) => a + b) / 3 : null
+}
 export const mtr = () => once('mtr', () => json(`${TRANSIT}/mtr.json`))
 export const busIndex = () => once('bus-index', () => json(`${TRANSIT}/bus/index.json`))
 

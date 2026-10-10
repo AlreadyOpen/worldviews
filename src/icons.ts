@@ -14,9 +14,10 @@ import desktop from '@iconify-icons/ph/desktop'
 import search from '@iconify-icons/ph/magnifying-glass'
 import globe from '@iconify-icons/ph/globe-hemisphere-east'
 import check from '@iconify-icons/ph/check-bold'
+import briefcase from '@iconify-icons/ph/briefcase'
 
 Object.entries({ buildings, 'warning-circle': warning, train, 'users-three': users, 'squares-four': squares, x, 'sliders-horizontal': sliders,
-  'arrow-right': arrow, sun, moon, desktop, 'magnifying-glass': search, 'globe-hemisphere-east': globe, 'check-bold': check }).forEach(([n, d]) => addIcon('ph:' + n, d))
+  'arrow-right': arrow, sun, moon, desktop, 'magnifying-glass': search, 'globe-hemisphere-east': globe, 'check-bold': check, briefcase }).forEach(([n, d]) => addIcon('ph:' + n, d))
 
 // Map point icons (Helen, 2026-10-10: iconify icons for markers, the /map pattern): the data keeps its coloured circle, and an
 // Iconify icon is drawn on top as an SDF image. The <svg> is built by hand from the icon data: svgToURL(iconToHTML(...))

@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import * as D from './data'
 import { MAP_ICONS, iconImage } from './icons'
-import { HEIGHT_STOPS, MAG_STOPS, RAMPS, VIEW_IDS, type ViewId, HK, inHK } from './views'
+import { HEIGHT_STOPS, MAG_STOPS, RAMPS, VIEWS, VIEW_IDS, type ViewId, HK, inHK } from './views'
 
 let protocol = false
 export type Theme = 'light' | 'dark'
@@ -22,6 +22,7 @@ export const LAYERS: Record<ViewId | 'base', string[]> = {
   hazards: ['z-eonet', 'z-gdacs', 'z-quake', 'z-eonet-icon', 'z-gdacs-icon', 'z-quake-icon', 'z-quake-label'],
   transit: ['t-bus', 't-mtr', 't-mtr-st', 't-mtr-st-icon'],
   people: ['p-fill', 'p-line'],
+  business: ['bz-fill', 'bz-line'],
 }
 const EONET_CAT: Record<string, string> = { severeStorms: 'storms', floods: 'floods', drought: 'floods', wildfires: 'fire', volcanoes: 'fire' }
 // Which icon each hazard kind gets (GDACS event type, NASA EONET category id).
@@ -44,6 +45,7 @@ export class World {
   private installed = false
   private peopleBy: Record<string, { v: number; year: string; src?: string }> = {}
   private peopleRamp: any = null
+  private bizBy: Record<string, { v: number; year: string }> = {}
   private noData: any = null
   private gen = 0
 
@@ -109,6 +111,9 @@ export class World {
     m.addLayer({ id: 'p-fill', type: 'fill', source: 'people', 'source-layer': 'countries', layout: hid,
       paint: { 'fill-color': n.nodata, 'fill-opacity': 0.78 } })
     m.addLayer({ id: 'p-line', type: 'line', source: 'people', 'source-layer': 'countries', layout: hid, paint: { 'line-color': dark ? '#1d2120' : '#fbfcfa', 'line-width': 0.6 } })
+    m.addLayer({ id: 'bz-fill', type: 'fill', source: 'people', 'source-layer': 'countries', layout: hid,
+      paint: { 'fill-color': n.nodata, 'fill-opacity': 0.78 } })
+    m.addLayer({ id: 'bz-line', type: 'line', source: 'people', 'source-layer': 'countries', layout: hid, paint: { 'line-color': dark ? '#1d2120' : '#fbfcfa', 'line-width': 0.6 } })
     m.addLayer({ id: 'b-mtr', type: 'line', source: 'mtr', layout: { ...hid, 'line-cap': 'round' }, paint: { 'line-color': n.line, 'line-width': 1.6, 'line-opacity': 0.8 } })
     m.addLayer({ id: 't-bus', type: 'line', source: 'bus', layout: { ...hid, 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': dark ? '#c9d1cd' : '#2c3330', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.5, 16, 1.6], 'line-opacity': dark ? 0.11 : 0.22 } })
@@ -153,6 +158,7 @@ export class World {
     if (want.has('b-mtr') || s.views.includes('transit')) this.loadMtr()
     if (s.views.includes('hazards')) this.loadHazards(s.time === 't3' ? 'month' : 'day')
     if (s.views.includes('people') || force || prev.sub.people !== s.sub.people) this.loadPeople((s.sub.people || 'density') as D.Indicator)
+    if (s.views.includes('business') && (force || prev.sub.business !== s.sub.business || !prev.views.includes('business'))) this.loadBusiness(s.sub.business || 'BE')
     if (s.views.includes('transit')) this.loadBus()
     this.filters()
     this.onUpdate?.()
@@ -216,6 +222,17 @@ export class World {
     }))
   }
 
+  // B-READY topic score, 0 to 100, on a fixed scale (scores are comparable across economies); uncovered places stay neutral.
+  private loadBusiness(topic: string) {
+    this.track(D.bready(`IC.BRE.${topic}.OS`).then(f => {
+      if (!this.installed) return
+      this.bizBy = f.data?.by || {}
+      const pairs = Object.entries(this.bizBy).flatMap(([k, r]) => [k, r.v])
+      const v: any = pairs.length ? ['match', D.ISO, ...pairs, -1] : -1
+      this.map.setPaintProperty('bz-fill', 'fill-color', ['case', ['>=', v, 0], ramp(v, [0, 25, 50, 75, 100], RAMPS.viridis[this.theme]), this.noData])
+    }))
+  }
+
   private loadBus() {
     const m = this.map
     if (!this.installed || !this.state.views.includes('transit') || m.getZoom() < 11 || !inHK(m.getCenter().toArray())) return
@@ -260,6 +277,9 @@ export class World {
     if (id === 'p-fill') { const iso = D.isoOf(p), r = this.peopleBy[iso]; p = { name: p.NAME, iso3: iso, v: r?.v, year: r?.year } }
     if (id === 'p-fill') return this.onPick?.({ view: 'people', title: p.name, source: 'World Bank or official statistics (world-places), Natural Earth', href: `https://data.worldbank.org/country/${p.iso3}`,
       rows: [['Value', p.v != null ? `${Math.round(p.v * 10) / 10}` : 'No data'], ['Year', p.year || 'None']] })
+    if (id === 'bz-fill') { const iso = D.isoOf(p), r = this.bizBy[iso], t = this.state.sub.business || 'BE'
+      return this.onPick?.({ view: 'business', title: p.NAME, source: 'World Bank, B-READY (CC BY 4.0)', href: 'https://www.worldbank.org/en/businessready',
+        rows: [[`${VIEWS.business.subs.find(x => x.id === t)?.label}, score`, r ? `${Math.round(r.v * 10) / 10} of 100` : 'Not covered by B-READY yet'], ['Year', r?.year || 'None']] }) }
   }
 }
 

@@ -1,7 +1,7 @@
 // The info views: one question each, with its sub-maps (V5 topics), legend ramp and copy. Ramps are colour-blind safe
 // (viridis, inferno, cividis families) and every ramp has a second channel: height, size or a label.
-export type ViewId = 'height' | 'hazards' | 'transit' | 'people'
-export const VIEW_IDS: ViewId[] = ['height', 'hazards', 'transit', 'people']
+export type ViewId = 'height' | 'hazards' | 'transit' | 'people' | 'business'
+export const VIEW_IDS: ViewId[] = ['height', 'hazards', 'transit', 'people', 'business']
 
 export const VIEWS: Record<ViewId, {
   question: string; noun: string; topic: string; icon: string
@@ -17,6 +17,10 @@ export const VIEWS: Record<ViewId, {
   people: { question: 'Who lives here?', noun: 'People', topic: 'People', icon: 'ph:users-three',
     subs: [{ id: 'density', label: 'Density' }, { id: 'population', label: 'Population' }, { id: 'aged', label: 'Aged 65 and over' },
       { id: 'urban', label: 'Living in towns and cities' }] },
+  business: { question: 'How easy is business here?', noun: 'Business', topic: 'Business', icon: 'ph:briefcase',
+    subs: [{ id: 'BE', label: 'Business entry' }, { id: 'BL', label: 'Business location' }, { id: 'US', label: 'Utility services' },
+      { id: 'LB', label: 'Labor' }, { id: 'FS', label: 'Financial services' }, { id: 'IT', label: 'International trade' }, { id: 'TX', label: 'Taxation' },
+      { id: 'DR', label: 'Dispute resolution' }, { id: 'MC', label: 'Market competition' }, { id: 'BI', label: 'Business insolvency' }] },
 }
 
 // Ramps per theme: the low end must stay visible on the basemap (dark purple vanishes on a dark map, pale yellow on a light one).
@@ -44,6 +48,7 @@ export const SOURCES = {
     { name: 'Natural Earth countries', href: 'https://www.naturalearthdata.com', licence: 'Public domain' },
     { name: 'AlreadyOpen world-places: official figures (Taiwan, Jersey, Åland, Pacific places)', href: 'https://huggingface.co/datasets/alreadyopen/world-places', licence: 'per source' },
   ],
+  business: [{ name: 'World Bank, B-READY (Business Ready)', href: 'https://www.worldbank.org/en/businessready', licence: 'CC BY 4.0' }],
 }
 
 export const HK = { center: [114.165, 22.29] as [number, number], zoom: 13.6, pitch: 58, bearing: -18 }
