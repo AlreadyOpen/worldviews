@@ -13,6 +13,7 @@ import type { LegendSpec } from './legend'
 import { World, type Pick, type Theme } from './engine'
 import { answer, type Answer } from './answers'
 import * as D from './data'
+import * as Sat from './sats'
 import { HK, SOURCES, VIEWS, VIEW_IDS, type ViewId } from './views'
 
 // Every open design option is a URL parameter and a control (eyeball-all-options); the URL holds the whole state.
@@ -447,6 +448,12 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
         ['Aged 65+', val(2) ? `${nf.format(val(2)!.v)}%` : 'None'], ['In towns and cities', val(3) ? `${nf.format(val(3)!.v)}%` : 'None']]
       const biz = await D.breadyOverall(p.ISO3_CODE)
       // B-READY publishes no single score: this is the mean of its three pillars across the ten topics
+      // Satellites overhead at the map centre (more than 10° up): the open group if the view is on, else the space stations
+      if (p.ISO3_CODE !== 'WLD') {
+        const grp = s.view === 'satellites' ? s.sub.satellites || 'stations' : 'stations', f = (await Sat.gp(grp)).data, t = new Date(), g = Sat.gstime(t)
+        const n = f?.sats.filter(x => { const q = Sat.where(x.rec, t, g); return q && Sat.elevation(q.eci, g, center) > 10 }).length
+        stats.push(['Satellites overhead', n != null ? `${n} (${Sat.SAT_GROUPS[grp].toLowerCase()})` : 'None'])
+      } else stats.push(['Satellites overhead', 'None'])
       const bec = (await D.rise('BEC')).data?.by[p.ISO3_CODE]
       stats.push(['Building energy codes (RISE score)', bec ? `${nf.format(bec.v)} of 100 (${bec.year})` : 'None'])
       if (import.meta.env.PUBLIC_EDITION === 'full') {

@@ -2,6 +2,7 @@
 import * as maplibregl from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import * as D from './data'
+import * as Sat from './sats'
 import { MAP_ICONS, iconImage } from './icons'
 import { HEIGHT_STOPS, MAG_STOPS, RAMPS, VIEWS, VIEW_IDS, type ViewId, HK, inHK } from './views'
 
@@ -24,7 +25,10 @@ export const LAYERS: Record<ViewId | 'base', string[]> = {
   people: ['p-fill', 'p-line'],
   business: ['bz-fill', 'bz-line'],
   rules: ['r-fill', 'r-line'],
+  satellites: ['s-past', 's-next', 's-dot', 's-icon'],
 }
+// Satellite colour by altitude (km): low orbit, Starlink shells, navigation orbits, geostationary.
+export const ALT_STOPS = [400, 600, 1200, 20000, 36000]
 const EONET_CAT: Record<string, string> = { severeStorms: 'storms', floods: 'floods', drought: 'floods', wildfires: 'fire', volcanoes: 'fire' }
 // Which icon each hazard kind gets (GDACS event type, NASA EONET category id).
 const GDACS_ICON: any = ['match', ['get', 'eventtype'], 'EQ', 'i-pulse', 'TC', 'i-hurricane', 'FL', 'i-drop', 'DR', 'i-sun-dim', 'WF', 'i-fire', 'VO', 'i-mountains', 'i-warning']
@@ -50,6 +54,11 @@ export class World {
   private riseBy: Record<string, { v: number; year: string }> = {}
   private noData: any = null
   private gen = 0
+  sats: Sat.Sat[] = []
+  satGroup = ''
+  satMs = 0                    // last propagation + setData time, for the performance note
+  private satTimer: any = 0
+  private trackAt = 0
 
   constructor(el: HTMLElement, theme: Theme, camera: { center: [number, number]; zoom: number; pitch?: number; bearing?: number }) {
     if (!protocol) { maplibregl.setWorkerUrl('/maplibre/maplibre-gl-worker.mjs'); maplibregl.addProtocol('pmtiles', new Protocol().tile); protocol = true }
@@ -105,9 +114,9 @@ export class World {
       const f = m.queryRenderedFeatures(m.project([x, y]), { layers: ['countries-hit'] })[0]
       return f ? { NAME_ENGL: f.properties.NAME, ISO3_CODE: D.isoOf(f.properties) } : null
     })
-    for (const s of ['quakes', 'gdacs', 'eonet', 'mtr', 'mtr-st', 'bus'])
+    for (const s of ['quakes', 'gdacs', 'eonet', 'mtr', 'mtr-st', 'bus', 'sats', 'iss-past', 'iss-next'])
       m.addSource(s, { type: 'geojson', data: empty,
-        attribution: { quakes: 'USGS', gdacs: 'GDACS', eonet: 'NASA EONET', mtr: 'hk-transit (Government of the HKSAR data)' }[s] } as any)
+        attribution: { quakes: 'USGS', gdacs: 'GDACS', eonet: 'NASA EONET', mtr: 'hk-transit (Government of the HKSAR data)', sats: 'CelesTrak; satellite.js' }[s] } as any)
     const P = RAMPS.cividis[this.theme], I = RAMPS.inferno[this.theme]
     this.peopleRamp = P; this.noData = n.nodata
     m.addLayer({ id: 'p-fill', type: 'fill', source: 'people', 'source-layer': 'countries', layout: hid,
@@ -137,6 +146,12 @@ export class World {
     m.addLayer({ id: 'z-quake-label', type: 'symbol', source: 'quakes', filter: ['>=', ['get', 'mag'], 5], layout: { ...hid,
       'text-field': ['concat', 'M', ['to-string', ['get', 'mag']]], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.4] },
       paint: { 'text-color': dark ? '#e6ebe8' : '#1d2120', 'text-halo-color': dark ? '#151918' : '#fbfcfa', 'text-halo-width': 1.5 } })
+    const iss = dark ? '#e6ebe8' : '#1d2120'
+    m.addLayer({ id: 's-past', type: 'line', source: 'iss-past', layout: hid, paint: { 'line-color': iss, 'line-width': 1.5, 'line-opacity': 0.7, 'line-dasharray': [2, 2] } })
+    m.addLayer({ id: 's-next', type: 'line', source: 'iss-next', layout: hid, paint: { 'line-color': iss, 'line-width': 2, 'line-opacity': 0.85 } })
+    m.addLayer({ id: 's-dot', type: 'circle', source: 'sats', layout: { ...hid, 'circle-sort-key': ['case', ['get', 'iss'], 1, 0] }, paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, ['case', ['get', 'iss'], 9, 5], 6, ['case', ['get', 'iss'], 13, 8]],
+      'circle-color': ramp(['get', 'alt'], ALT_STOPS, RAMPS.viridis[this.theme]), 'circle-stroke-color': dark ? '#151918' : '#fbfcfa', 'circle-stroke-width': 1 } })
     // Iconify icons on the points (SDF, so one image takes any colour); circles keep the data colour underneath
     await Promise.all(Object.entries(MAP_ICONS).map(async ([id, d]) => { if (!m.hasImage(id)) m.addImage(id, await iconImage(d), { sdf: true, pixelRatio: 2 }) }))
     if (gen !== this.gen) return
@@ -146,6 +161,7 @@ export class World {
     icon('z-quake-icon', 'quakes', 'i-pulse', ['interpolate', ['exponential', 1.6], ['get', 'mag'], 4, 0.22, 5, 0.3, 8, 0.95], '#fff', { filter: ['>=', ['get', 'mag'], 4] })
     icon('z-gdacs-icon', 'gdacs', GDACS_ICON, ['*', 0.17, sev], '#fff')
     icon('z-eonet-icon', 'eonet', EONET_ICON, 0.2, dark ? '#d8dedb' : '#2c3330')
+    icon('s-icon', 'sats', 'i-satellite', ['interpolate', ['linear'], ['zoom'], 1, ['case', ['get', 'iss'], 0.3, 0.17], 6, ['case', ['get', 'iss'], 0.44, 0.27]], '#fff')
     icon('t-mtr-st-icon', 'mtr-st', 'i-subway', ['interpolate', ['linear'], ['zoom'], 11, 0.16, 15, 0.3], ['get', 'color'], { minzoom: 11 })
     this.apply(this.state, true)
   }
@@ -165,6 +181,8 @@ export class World {
     if (s.views.includes('people') || force || prev.sub.people !== s.sub.people) this.loadPeople((s.sub.people || 'density') as D.Indicator)
     if (s.views.includes('business') && (force || prev.sub.business !== s.sub.business || !prev.views.includes('business'))) this.loadBusiness(s.sub.business || 'BE')
     if (s.views.includes('rules') && (force || prev.sub.rules !== s.sub.rules || !prev.views.includes('rules'))) this.loadRules(s.sub.rules || 'BEC')
+    if (s.views.includes('satellites')) { if (force || prev.sub.satellites !== s.sub.satellites || !prev.views.includes('satellites')) this.loadSats(s.sub.satellites || 'stations') }
+    else if (this.satTimer) { clearInterval(this.satTimer); this.satTimer = 0 }
     if (s.views.includes('transit')) this.loadBus()
     this.filters()
     this.onUpdate?.()
@@ -260,6 +278,43 @@ export class World {
     }))
   }
 
+  // Satellites: fetch the group (cached 2 h), then move every point once a second; the ISS track is redrawn once a minute.
+  private loadSats(group: string) {
+    this.track(Sat.gp(group).then(f => {
+      if (!this.installed || (this.state.sub.satellites || 'stations') !== group) return
+      this.sats = f.data?.sats || []; this.satGroup = group; this.trackAt = 0
+      this.onPick?.(null)
+      // Thousands of points (Starlink): plain small dots, no icons, so the globe stays readable; icons for small groups.
+      const many = this.sats.length > 500
+      this.map.setFilter('s-icon', many ? ['==', 1, 0] : null)
+      this.map.setPaintProperty('s-dot', 'circle-radius', many ? ['interpolate', ['linear'], ['zoom'], 1, 1.4, 6, 3.5]
+        : ['interpolate', ['linear'], ['zoom'], 1, ['case', ['get', 'iss'], 9, 5], 6, ['case', ['get', 'iss'], 13, 8]])
+      this.map.setPaintProperty('s-dot', 'circle-stroke-width', many ? 0 : 1)
+      clearInterval(this.satTimer)
+      this.tickSats()
+      this.satTimer = setInterval(() => this.tickSats(), 1000)
+    }))
+  }
+
+  private tickSats() {
+    const m = this.map
+    if (!this.installed || !this.state.views.includes('satellites')) return
+    const t0 = performance.now(), t = new Date(), g = Sat.gstime(t), features: any[] = []
+    this.sats.forEach((s, i) => {
+      const p = Sat.where(s.rec, t, g)
+      if (p && Number.isFinite(p.lon)) features.push({ type: 'Feature', properties: { i, alt: Math.round(p.alt), iss: s.id === 25544 }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } })
+    })
+    ;(m.getSource('sats') as any)?.setData({ type: 'FeatureCollection', features })
+    const iss = this.sats.find(s => s.id === 25544)
+    if (Date.now() - this.trackAt > 60e3) {
+      this.trackAt = Date.now()
+      const tr = iss ? Sat.track(iss.rec) : { past: [], next: [] }
+      ;(m.getSource('iss-past') as any)?.setData({ type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: tr.past } })
+      ;(m.getSource('iss-next') as any)?.setData({ type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: tr.next } })
+    }
+    this.satMs = performance.now() - t0
+  }
+
   private loadBus() {
     const m = this.map
     if (!this.installed || !this.state.views.includes('transit') || m.getZoom() < 11 || !inHK(m.getCenter().toArray())) return
@@ -283,7 +338,8 @@ export class World {
 
   private pick(pt: maplibregl.PointLike) {
     const layers = this.state.views.flatMap(v => LAYERS[v]).filter(id => this.map.getLayoutProperty(id, 'visibility') === 'visible')
-    const f = layers.length ? this.map.queryRenderedFeatures(pt, { layers })[0] : undefined
+    const fs = layers.length ? this.map.queryRenderedFeatures(pt, { layers }) : []
+    const f = fs.find(x => x.properties?.iss) || fs[0]   // vehicles docked at the ISS share its point: the ISS wins
     if (!f) return this.onPick?.(null)
     let p: any = f.properties; const id = f.layer.id
     const fmt = (t: any) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -304,6 +360,10 @@ export class World {
     if (id === 'p-fill') { const iso = D.isoOf(p), r = this.peopleBy[iso]; p = { name: p.NAME, iso3: iso, v: r?.v, year: r?.year } }
     if (id === 'p-fill') return this.onPick?.({ view: 'people', title: p.name, source: 'World Bank or official statistics (world-places), Natural Earth', href: `https://data.worldbank.org/country/${p.iso3}`,
       rows: [['Value', p.v != null ? `${Math.round(p.v * 10) / 10}` : 'No data'], ['Year', p.year || 'None']] })
+    if (id === 's-dot' || id === 's-icon') { const s = this.sats[p.i], q = s && Sat.where(s.rec, new Date())
+      if (s) return this.onPick?.({ view: 'satellites', title: s.name, source: 'CelesTrak GP data; position computed with satellite.js', href: `https://celestrak.org/satcat/table-satcat.php?CATNR=${s.id}`,
+        rows: [['NORAD id', String(s.id)], ['Altitude', q ? `${Math.round(q.alt).toLocaleString('en')} km` : 'Not computed'], ['Speed', q ? `${q.speed.toFixed(2)} km/s` : 'Not computed'],
+          ['Element epoch', `${s.epoch.replace('T', ' ').slice(0, 16)} UTC`]] }) }
     if (id === 'bz-fill') { const iso = D.isoOf(p), r = this.bizBy[iso], t = this.state.sub.business || 'BE'
       return this.onPick?.({ view: 'business', title: p.NAME, source: 'World Bank, B-READY (CC BY 4.0)', href: 'https://www.worldbank.org/en/businessready',
         rows: [[`${VIEWS.business.subs.find(x => x.id === t)?.label}, score`, r ? `${Math.round(r.v * 10) / 10} of 100` : 'Not covered by B-READY yet'], ['Year', r?.year || 'None']] }) }

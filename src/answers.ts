@@ -1,6 +1,7 @@
 // What each view answers right now, for the current camera: one number, what it counts, and the state behind it.
 import * as D from './data'
-import { LAYERS, type World } from './engine'
+import * as Sat from './sats'
+import { ALT_STOPS, LAYERS, type World } from './engine'
 import { HEIGHT_STOPS, HK, INDICATORS_NOTE, MAG_STOPS, RAMPS, VIEWS, inHK, type ViewId } from './views'
 import type { LegendSpec } from './legend'
 
@@ -16,6 +17,11 @@ const nf = new Intl.NumberFormat('en', { maximumFractionDigits: 1 })
 const big = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
 const time = (t: number) => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 const ordinal = (n: number) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th')
+// Great-circle angle in degrees (haversine), safe across the antimeridian.
+const arc = ([x1, y1]: number[], [x2, y2]: number[]) => {
+  const r = Math.PI / 180, h = Math.sin(((y2 - y1) * r) / 2) ** 2 + Math.cos(y1 * r) * Math.cos(y2 * r) * Math.sin(((x2 - x1) * r) / 2) ** 2
+  return (2 * Math.asin(Math.min(1, Math.sqrt(h)))) / r
+}
 const km = (a: number[], b: number[]) => {
   const r = Math.PI / 180, x = (b[0] - a[0]) * r * Math.cos(((a[1] + b[1]) / 2) * r), y = (b[1] - a[1]) * r
   return Math.round(Math.sqrt(x * x + y * y) * 6371)
@@ -24,6 +30,29 @@ const km = (a: number[], b: number[]) => {
 export async function answer(w: World, v: ViewId): Promise<Answer> {
   const m = w.map, c = m.getCenter().toArray(), z = m.getZoom(), th = w.theme, b = m.getBounds()
   const inView = (p: number[]) => b.contains(p as any)
+  if (v === 'satellites') {
+    const grp = w.state.sub.satellites || 'stations', label = Sat.SAT_GROUPS[grp]
+    const f = await Sat.gp(grp)
+    const legend: LegendSpec = { kind: 'ramp', title: 'Altitude', colors: RAMPS.viridis[th], ticks: ALT_STOPS.map((a, i) => `${nf.format(a)}${i === 0 || i === ALT_STOPS.length - 1 ? ' km' : ''}`),
+      note: `Each point is where the satellite is straight above, moved every second.${grp === 'stations' || grp === 'visual' ? ' The large point is the ISS; its line shows the next 90 minutes, dashed the last 90.' : ''}` }
+    if (!f.data) return { status: 'error', legend, errors: [`CelesTrak: ${f.error}`] }
+    const t = new Date(), g = Sat.gstime(t)
+    let over = 0, here = 0
+    for (const s of f.data.sats) {
+      const p = Sat.where(s.rec, t, g)
+      if (!p || !Number.isFinite(p.lon)) continue
+      if (inView([p.lon, p.lat]) && arc(c, [p.lon, p.lat]) < 80) here++   // the globe's bounds span the world at low zoom: keep the near side
+      if (Sat.elevation(p.eci, g, c) > 10) over++
+    }
+    const iss = f.data.sats.find(s => s.id === 25544), ip = iss && Sat.where(iss.rec, t, g), pass = iss && Sat.nextPass(iss.rec, c, t)
+    const deg = (x: number, p: string, n: string) => `${nf.format(Math.abs(x))}°${x >= 0 ? p : n}`
+    const issLine = ip ? ` ISS now over ${deg(ip.lat, 'N', 'S')} ${deg(ip.lon, 'E', 'W')}, ${nf.format(ip.alt)} km up, ${nf.format(ip.speed)} km/s.` +
+      (pass ? ` Next above 10° from the map centre: ${pass.toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} (your time).` : ' No pass above 10° from the map centre in the next 24 hours.')
+      : ' The ISS is in the Space stations group.'
+    return { status: 'ok', legend, updated: `CelesTrak elements fetched ${time(f.data.at)}, positions at ${t.toLocaleTimeString('en-GB')}`, value: nf.format(over),
+      counts: `of ${nf.format(f.data.sats.length)} (${label.toLowerCase()}) more than 10° above the horizon at the map centre`,
+      detail: `${nf.format(here)} are over the part of the Earth in view.${issLine}` }
+  }
   if (v === 'height') {
     const sub = w.state.sub.height || 'all'
     const legend: LegendSpec = { kind: 'ramp', title: 'Height above ground', colors: RAMPS.viridis[th], ticks: HEIGHT_STOPS.map((h, i) => i === HEIGHT_STOPS.length - 1 ? `${h} m+` : `${h}`),
