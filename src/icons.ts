@@ -17,9 +17,10 @@ import check from '@iconify-icons/ph/check-bold'
 import briefcase from '@iconify-icons/ph/briefcase'
 import leaf from '@iconify-icons/ph/leaf'
 import caretDown from '@iconify-icons/ph/caret-down'
+import car from '@iconify-icons/ph/car'
 
 Object.entries({ buildings, 'warning-circle': warning, train, 'users-three': users, 'squares-four': squares, x, 'sliders-horizontal': sliders,
-  'arrow-right': arrow, sun, moon, desktop, 'magnifying-glass': search, 'globe-hemisphere-east': globe, 'check-bold': check, briefcase, leaf, 'caret-down': caretDown }).forEach(([n, d]) => addIcon('ph:' + n, d))
+  'arrow-right': arrow, sun, moon, desktop, 'magnifying-glass': search, 'globe-hemisphere-east': globe, 'check-bold': check, briefcase, leaf, 'caret-down': caretDown, car }).forEach(([n, d]) => addIcon('ph:' + n, d))
 addIcon('tabler:satellite', satellite)
 addIcon('ph:airplane-takeoff', takeoffLine)
 
@@ -41,10 +42,12 @@ import takeoffLine from '@iconify-icons/ph/airplane-takeoff'
 import helicopter from '@iconify-icons/tabler/helicopter'
 import anchor from '@iconify-icons/ph/anchor-bold'
 import balloon from '@iconify-icons/tabler/balloon'
+import cone from '@iconify-icons/ph/traffic-cone-bold'
+import school from '@iconify-icons/ph/graduation-cap-bold'
 export const MAP_ICONS: Record<string, { body: string; width?: number; height?: number }> = {
   'i-pulse': pulse, 'i-hurricane': hurricane, 'i-drop': drop, 'i-sun-dim': sunDim, 'i-fire': fire, 'i-mountains': mountains,
   'i-snowflake': snowflake, 'i-warning': warn, 'i-subway': subway, 'i-satellite': satellite,
-  'i-plane': takeoff, 'i-heli': helicopter, 'i-anchor': anchor, 'i-balloon': balloon }
+  'i-plane': takeoff, 'i-heli': helicopter, 'i-anchor': anchor, 'i-balloon': balloon, 'i-cone': cone, 'i-school': school }
 
 export async function iconImage(d: { body: string; width?: number; height?: number }, px = 64) {
   const w = d.width || 16, h = d.height || 16

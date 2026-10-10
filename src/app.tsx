@@ -14,6 +14,7 @@ import { World, type Pick, type Theme } from './engine'
 import { answer, type Answer } from './answers'
 import * as D from './data'
 import * as Sat from './sats'
+import { aemo, auState, NEM_REGION } from './local'
 import { HK, SOURCES, VIEWS, VIEW_IDS, type ViewId } from './views'
 
 // Every open design option is a URL parameter and a control (eyeball-all-options); the URL holds the whole state.
@@ -418,6 +419,7 @@ function AnswerPanel({ s, setS, view, a, all, pick, clearPick, jump, collapsed, 
       )}
       <div className="meta">
         {(SOURCES[view] as any[]).filter(src => { const sb = s.sub[view] || VIEWS[view].subs[0].id; return (!src.sub || src.sub === sb) && src.notSub !== sb }).map(src => <span key={src.name}><a href={src.href} target="_blank" rel="noreferrer">{src.name}</a>. {src.licence}</span>)}
+        {a?.credits?.map(src => <span key={src.name}><a href={src.href} target="_blank" rel="noreferrer">{src.name}</a>. {src.licence}</span>)}
       </div>
       {card}
     </aside>
@@ -447,7 +449,7 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
       const stats: [string, string][] = [
         ['Population', val(1) ? big.format(val(1)!.v) : 'None'], ['People per km²', val(0) ? nf.format(val(0)!.v) : 'None'],
         ['Aged 65+', val(2) ? `${nf.format(val(2)!.v)}%` : 'None'], ['In towns and cities', val(3) ? `${nf.format(val(3)!.v)}%` : 'None']]
-      const biz = await D.breadyOverall(p.ISO3_CODE)
+      const biz = await D.breadyOverall(p.ISO3_CODE), srcsExtra: string[] = []
       // B-READY publishes no single score: this is the mean of its three pillars across the ten topics
       const la = p.ISO3_CODE !== 'WLD' ? (await D.largeAirports()).data : undefined, near = la && D.nearestLarge(la, center)
       stats.push(['Airports nearby', near ? `${near.a.iata || near.a.icao || near.a.name}, ${Math.round(near.km).toLocaleString('en')} km` : 'None'])
@@ -464,7 +466,15 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
         stats.push(['Building energy code (Building Green)', bg ? D.BG_SHORT[D.bgStatus(bg)] : 'None'])
       }
       stats.push(['Business (B-READY, mean of pillars)', biz != null ? `${nf.format(biz)} of 100` : 'None'])
-      const srcs = [...new Set([0, 1, 2, 3].map(i => val(i)).filter(Boolean).map(r => r!.src || 'World Bank'))]
+      // Australia: the live wholesale electricity price and demand in the NEM region under the map centre (AEMO)
+      if (p.ISO3_CODE === 'AUS') {
+        const st = (await auState(center)).data, reg = st && NEM_REGION[st.state_code_2021]
+        const r = reg && (await aemo()).data?.ELEC_NEM_SUMMARY?.find((x: any) => x.REGIONID === reg)
+        stats.push([`Power price now (AEMO${reg ? `, ${reg.slice(0, -1)}` : ''})`, r ? `$${nf.format(r.PRICE)}/MWh, demand ${nf.format(Math.round(r.TOTALDEMAND))} MW (${r.SETTLEMENTDATE.slice(11, 16)} market time)`
+          : st && !reg ? `None (${st.state_name_2021} is not in the NEM)` : 'None'])
+        if (r && !srcsExtra.includes('AEMO')) srcsExtra.push('AEMO')
+      }
+      const srcs = [...new Set([0, 1, 2, 3].map(i => val(i)).filter(Boolean).map(r => r!.src || 'World Bank')), ...srcsExtra]
       if (live) setPlace({ name: p.NAME_ENGL, iso3: p.ISO3_CODE, stats, year: val(1)?.year, srcs })
     })()
     return () => { live = false }

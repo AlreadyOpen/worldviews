@@ -2,8 +2,8 @@
 // (viridis, inferno, cividis families) and every ramp has a second channel: height, size or a label.
 // 'rules' runs on RISE (CC BY 4.0) in both editions; the full edition adds a noncommercial detail source as one more
 // sub-choice. Every branch for that source is dead code in WorldViews Libre, so its copy and URL are not in the bundle.
-export type ViewId = 'height' | 'hazards' | 'transit' | 'people' | 'business' | 'rules' | 'satellites' | 'airports'
-export const VIEW_IDS: ViewId[] = ['height', 'hazards', 'transit', 'people', 'business', 'rules', 'satellites', 'airports']
+export type ViewId = 'height' | 'hazards' | 'transit' | 'traffic' | 'people' | 'business' | 'rules' | 'satellites' | 'airports'
+export const VIEW_IDS: ViewId[] = ['height', 'hazards', 'transit', 'traffic', 'people', 'business', 'rules', 'satellites', 'airports']
 
 export const VIEWS: Record<ViewId, {
   question: string; noun: string; topic: string; icon: string
@@ -13,9 +13,11 @@ export const VIEWS: Record<ViewId, {
     subs: [{ id: 'all', label: 'Every height' }, { id: 'tall', label: '150 m and taller' }, { id: 'super', label: 'Supertall, 300 m and taller' }] },
   hazards: { question: 'What is happening now?', noun: 'Hazards', topic: 'Safety', icon: 'ph:warning-circle',
     subs: [{ id: 'all', label: 'All events' }, { id: 'quakes', label: 'Earthquakes' }, { id: 'storms', label: 'Cyclones and storms' },
-      { id: 'floods', label: 'Floods and drought' }, { id: 'fire', label: 'Wildfires and volcanoes' }] },
+      { id: 'floods', label: 'Floods and drought' }, { id: 'fire', label: 'Wildfires and volcanoes' }, { id: 'roads', label: 'Roads (South Australia)' }] },
   transit: { question: 'Where can I ride?', noun: 'Transit', topic: 'Moving', icon: 'ph:train',
     subs: [{ id: 'all', label: 'Rail and bus' }, { id: 'rail', label: 'MTR rail' }, { id: 'bus', label: 'Bus and minibus' }] },
+  traffic: { question: 'How busy are the roads?', noun: 'Traffic', topic: 'Roads', icon: 'ph:car',
+    subs: [{ id: 'all', label: 'Traffic and crashes' }, { id: 'volume', label: 'Vehicles per day' }, { id: 'crashes', label: 'Crashes, 2020 to 2024' }] },
   people: { question: 'Who lives here?', noun: 'People', topic: 'People', icon: 'ph:users-three',
     subs: [{ id: 'density', label: 'Density' }, { id: 'population', label: 'Population' }, { id: 'aged', label: 'Aged 65 and over' },
       { id: 'urban', label: 'Living in towns and cities' }] },
@@ -54,6 +56,7 @@ export const SOURCES = {
     { name: 'GDACS alerts', href: 'https://www.gdacs.org', licence: 'GDACS terms' },
     { name: 'NASA EONET', href: 'https://eonet.gsfc.nasa.gov', licence: 'NASA open data' },
   ],
+  traffic: [],   // per place: the country sources (local.ts) list themselves in the answer when they are in view
   transit: [{ name: 'AlreadyOpen hk-transit', href: 'https://huggingface.co/datasets/alreadyopen/hk-transit', licence: 'Government of the HKSAR data (DATA.GOV.HK, CSDI terms); TD, KMB, Citybus, MTR' }],
   people: [
     { name: 'World Bank indicators', href: 'https://data.worldbank.org', licence: 'CC BY 4.0' },
@@ -70,6 +73,7 @@ export const SOURCES = {
 }
 
 export const HK = { center: [114.165, 22.29] as [number, number], zoom: 13.6, pitch: 58, bearing: -18 }
+export const ADELAIDE = { center: [138.6, -34.925] as [number, number], zoom: 12, pitch: 0, bearing: 0 }
 export const HK_BOX = [113.82, 22.13, 114.44, 22.57]
 export const inHK = ([x, y]: number[]) => x > HK_BOX[0] && x < HK_BOX[2] && y > HK_BOX[1] && y < HK_BOX[3]
 

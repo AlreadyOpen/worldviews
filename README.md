@@ -33,10 +33,25 @@ licence is open.
 | What do building energy rules require? | [World Bank RISE](https://rise.esmap.org) via the Data360 API | CC BY 4.0 |
 | What is overhead? | [CelesTrak](https://celestrak.org/NORAD/elements/) GP data (from the US Space Force's space-track.org), positions computed in the browser with [satellite.js](https://github.com/shashwatak/satellite-js) | CelesTrak usage policy (each group fetched at most every 2 hours); satellite.js MIT |
 | Where can I fly from? | [OurAirports](https://ourairports.com/data/) via [AlreadyOpen world-airports](https://huggingface.co/datasets/alreadyopen/world-airports) | Public domain |
+| How busy are the roads? (South Australia) | [SA DIT traffic volume estimates](https://data.sa.gov.au/data/dataset/e5d6588a-f163-4f6a-bc57-25e95c87b5bd) and [road crash locations](https://data.sa.gov.au/data/dataset/cf8d8549-b976-4523-88ad-46dd32053696) (zips read in the browser) | CC BY 4.0; crash file CC BY 3.0 AU |
 | Basemap | [OpenFreeMap](https://openfreemap.org) | © OpenStreetMap contributors (ODbL) |
 
 The full edition adds the World Bank's [Building Green](https://www.worldbank.org/en/building-green) dataset to the building
 rules view, and AlreadyOpen's noncommercial places dataset to the people figures. Both are noncommercial use with attribution.
+
+### Country layers (Australia, Taiwan, United States)
+
+Read by the browser straight from each official source, only while their view is on and the map is over their area (big
+services per grid cell in view). All are keyless, answer the browser (CORS) and carry an open licence, so both editions have
+them. Code: `src/local-au.ts`, `src/local-tw.ts`, `src/local-us.ts` (shared helpers in `src/local-kit.ts`).
+
+| Place | View | Source | Licence |
+|---|---|---|---|
+| Australia | What is happening now? | [Geoscience Australia earthquakes](https://earthquakes.ga.gov.au), [DEA Hotspots](https://hotspots.dea.ga.gov.au) (WFS by grid cell), [NSW RFS major incidents](https://www.rfs.nsw.gov.au/news-and-media/stay-up-to-date/feeds) | CC BY 4.0 |
+| South Australia | What is happening now? (Roads) | [SA DIT Traffic SA](https://data.sa.gov.au/data/dataset/8d75dfcc-cc95-4be3-8747-ff273e8c53db) incidents, closures and detours, roadworks; [outback road warnings](https://data.sa.gov.au/data/dataset/f87c3fe7-e175-4538-a4cb-78521bc02eec) | CC BY 4.0 |
+| Australia | Who lives here? | [ABS estimated resident population by SA2](https://www.abs.gov.au/statistics/people/population/regional-population) with age (Data API) on ASGS 2021 boundaries; SA [enrolments by school](https://data.sa.gov.au/data/dataset/d385385a-6d79-4ef7-ab0f-0cfc583469f6) | CC BY 4.0 |
+| Melbourne | How tall is it? | [City of Melbourne 2023 building footprints](https://data.melbourne.vic.gov.au/explore/dataset/2023-building-footprints/) | CC BY 4.0 |
+| Australia | City card | [AEMO NEM summary](https://visualisations.aemo.com.au): price and demand now in the NEM region at the map centre | AEMO copyright permissions (any purpose, with attribution) |
 
 Each view shows its sources and licences in the app. "None" in a figure means the source does not publish one for that place.
 

@@ -13,7 +13,7 @@ export function once<T>(key: string, f: () => Promise<T>): Promise<Feed<T>> {
 export const peek = <T>(key: string): Feed<T> | undefined => done.get(key)
 export const retry = (key: string) => cache.delete(key)
 
-async function json(url: string) {
+export async function json(url: string) {
   const r = await fetch(url)
   if (!r.ok) throw new Error(`${new URL(url).host} answered ${r.status}`)
   return r.json()

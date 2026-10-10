@@ -4,6 +4,7 @@ import { Protocol } from 'pmtiles'
 import * as D from './data'
 import * as Sat from './sats'
 import { MAP_ICONS, iconImage } from './icons'
+import { LOCAL, cellsFor, layerOwner, meets, type Bbox, type Local } from './local'
 import { HEIGHT_STOPS, MAG_STOPS, RAMPS, VIEWS, VIEW_IDS, type ViewId, HK, inHK } from './views'
 
 let protocol = false
@@ -23,6 +24,7 @@ export const LAYERS: Record<ViewId | 'base', string[]> = {
   height: [],
   hazards: ['z-eonet', 'z-gdacs', 'z-quake', 'z-eonet-icon', 'z-gdacs-icon', 'z-quake-icon', 'z-quake-label'],
   transit: ['t-bus', 't-mtr', 't-mtr-st', 't-mtr-st-icon'],
+  traffic: [],            // country layers (local.ts) add their own ids to their view's list
   people: ['p-fill', 'p-line'],
   business: ['bz-fill', 'bz-line'],
   rules: ['r-fill', 'r-line'],
@@ -66,6 +68,11 @@ export class World {
   satMs = 0                    // last propagation + setData time, for the performance note
   private satTimer: any = 0
   private trackAt = 0
+  localFeats: Record<string, any[]> = {}         // what each country layer is drawing now (answers count it)
+  localErr: Record<string, string> = {}
+  private localCells: Record<string, Map<string, any[]>> = {}
+  private warned = new Set<string>()
+  private bldLayer = 'buildings'
 
   constructor(el: HTMLElement, theme: Theme, camera: { center: [number, number]; zoom: number; pitch?: number; bearing?: number }) {
     if (!protocol) { maplibregl.setWorkerUrl('/maplibre/maplibre-gl-worker.mjs'); maplibregl.addProtocol('pmtiles', new Protocol().tile); protocol = true }
@@ -73,7 +80,7 @@ export class World {
     this.map = new maplibregl.Map({ container: el, style: STYLE[theme], ...camera, maxPitch: 80, attributionControl: { compact: true },
       canvasContextAttributes: { preserveDrawingBuffer: true } } as any)
     this.map.on('style.load', () => { this.installed = false; this.install(++this.gen).catch(e => console.error('worldviews install failed', e)) })
-    this.map.on('moveend', () => { this.loadBus(); this.loadBuildings(); this.onUpdate?.() })
+    this.map.on('moveend', () => { this.loadBus(); this.loadBuildings(); this.loadLocal(); this.onUpdate?.() })
     this.map.on('click', e => this.pick(e.point))
     // Start with the attribution folded (the i button opens it), so it does not run under the panels.
     this.map.once('load', () => this.map.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show'))
@@ -173,6 +180,16 @@ export class World {
       ['case', ['==', T, 'closed'], dark ? '#151918' : '#fbfcfa', '#fff'], { 'source-layer': 'airports' })
     icon('a-world-icon', 'apt-large', 'i-plane', 0.12, '#fff', { maxzoom: 2 })
     icon('t-mtr-st-icon', 'mtr-st', 'i-subway', ['interpolate', ['linear'], ['zoom'], 11, 0.16, 15, 0.3], ['get', 'color'], { minzoom: 11 })
+    // Country layers: one GeoJSON source each; areas and lines under the global points, extrusions with the buildings.
+    this.localCells = {}; this.localFeats = {}
+    for (const L of LOCAL) {
+      m.addSource(L.id, { type: 'geojson', data: empty, attribution: L.name } as any)
+      for (const spec of L.layers(dark)) {
+        const before = spec.type === 'fill-extrusion' ? 'countries-hit' : spec.type === 'fill' || spec.type === 'line' ? 'z-eonet' : undefined
+        m.addLayer({ ...spec, source: L.id, layout: { ...(spec.layout || {}), visibility: 'none' } }, before)
+        if (!LAYERS[L.view].includes(spec.id)) LAYERS[L.view].push(spec.id)
+      }
+    }
     this.apply(this.state, true)
   }
 
@@ -197,6 +214,7 @@ export class World {
       features: f.data.map(a => ({ type: 'Feature', properties: a.props, geometry: { type: 'Point', coordinates: [a.lon, a.lat] } })) }) }))
     if (s.views.includes('transit')) this.loadBus()
     this.loadBuildings()
+    this.loadLocal()
     this.filters()
     this.onUpdate?.()
   }
@@ -211,6 +229,11 @@ export class World {
     for (const id of ['z-gdacs', 'z-eonet']) m.setFilter(id, zs === 'all' ? null : zs === 'quakes' ? ['==', 1, 0] : ['==', ['get', 'cat'], zs])
     m.setLayoutProperty('t-bus', 'visibility', s.views.includes('transit') && ts !== 'rail' ? 'visible' : 'none')
     for (const id of ['t-mtr', 't-mtr-st']) m.setLayoutProperty(id, 'visibility', s.views.includes('transit') && ts !== 'bus' ? 'visible' : 'none')
+    // country layers that belong to one sub-map (hazards: quakes, fire, storms, roads; traffic: volume, crashes)
+    for (const L of LOCAL) if (L.cat) {
+      const sub = s.sub[L.view] || 'all', on = s.views.includes(L.view) && (sub === 'all' || sub === L.cat)
+      for (const id of LAYERS[L.view]) if (layerOwner(id) === L && m.getLayer(id)) m.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none')
+    }
   }
 
   // T2 = a moment in the last 24 h (USGS day feed), T3 = a day in the last 30 (month feed). Both are real feed history.
@@ -335,6 +358,7 @@ export class World {
     if (!this.installed || m.getZoom() < 5) return
     this.track(D.buildingRegions().then(f => {
       if (!f.data || !this.installed) return
+      this.bldLayer = f.data.layer
       const b = m.getBounds(), [w, s, e, n] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], N = NEUTRAL[this.theme], V = RAMPS.viridis[this.theme]
       const OH: any = ['coalesce', ['get', 'height'], ['*', ['get', 'num_floors'], 3], 3]
       let added = false
@@ -359,6 +383,78 @@ export class World {
       }
       this.filters(); this.onUpdate?.()
     }))
+  }
+
+  // Country layers: fetch (once per session, or once per grid cell in view) while their view is on and the view meets their area.
+  // A failure is kept: the answer says "source unavailable", and the console gets one warning per source, not an error per move.
+  private loadLocal() {
+    const m = this.map
+    if (!this.installed) return
+    const b = m.getBounds(), view: Bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], z = m.getZoom(), gen = this.gen
+    for (const L of LOCAL) {
+      if (!this.state.views.includes(L.view) || z < L.minzoom || !meets(view, L.area)) continue
+      const cells = L.cell ? cellsFor(view, L.area, L.cell) : [null]
+      if (!cells?.length) continue                                   // null: too many cells at this zoom
+      const got = (this.localCells[L.id] ||= new Map())
+      const todo = cells.filter(c => !got.has(String(c)))
+      if (!todo.length) { if (L.dedupe) this.setLocal(L); continue }
+      this.track(Promise.all(todo.map(c => D.once(c ? `${L.id}:${c}` : L.id, () => L.load(c || undefined)))).then(rs => {
+        if (gen !== this.gen || !this.installed) return
+        const err = rs.find(r => r.error)?.error
+        if (err) {
+          this.localErr[L.id] = err
+          if (!this.warned.has(L.id)) { this.warned.add(L.id); console.warn(`WorldViews: ${L.name} unavailable (${err})`) }
+        } else delete this.localErr[L.id]
+        rs.forEach((r, i) => { if (r.data) got.set(String(todo[i]), r.data) })   // ponytail: cells stay for the session; evict if memory matters
+        this.setLocal(L)
+      }))
+    }
+  }
+
+  private setLocal(L: Local) {
+    const seen = new Set<any>(), all: any[] = []
+    for (const fs of this.localCells[L.id]?.values() || []) for (const f of fs) {
+      const k = f.id ?? null
+      if (k != null) { if (seen.has(k)) continue; seen.add(k) }   // a shape that spans two cells comes back from both
+      all.push(f)
+    }
+    const fs = L.dedupe ? this.withoutOverture(all) : all
+    this.localFeats[L.id] = fs
+    ;(this.map.getSource(L.id) as any)?.setData({ type: 'FeatureCollection', features: fs })
+    this.filters(); this.onUpdate?.()
+    this.map.once('idle', () => this.onUpdate?.())   // answers that read drawn features wait for the draw
+    // Overture tiles may still be arriving: check again once the map settles, if what it holds has changed
+    if (L.dedupe) this.map.once('idle', () => { if (this.overtureCount() !== this.lastOverture) this.setLocal(L) })
+  }
+
+  // Heights: keep a local building only where Overture has no height for it (its centre is not inside an Overture building
+  // that has one), so the two sources fill each other's gaps instead of drawing the same building twice.
+  private lastOverture = -1
+  private overturePolys() {
+    const out: number[][][] = []
+    for (const id of this.regions.keys()) for (const f of this.map.querySourceFeatures('bld-' + id, { sourceLayer: this.bldLayer, filter: ['has', 'height'] })) {
+      const g: any = f.geometry
+      if (g.type === 'Polygon') out.push(g.coordinates[0]); else if (g.type === 'MultiPolygon') for (const p of g.coordinates) out.push(p[0])
+    }
+    return out
+  }
+  private overtureCount() { return this.overturePolys().length }
+  private withoutOverture(fs: any[]) {
+    const polys = this.overturePolys(), grid = new Map<string, number[][][]>(), K = 1000   // ~100 m buckets
+    this.lastOverture = polys.length
+    for (const r of polys) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+      for (const [x, y] of r) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y) }
+      for (let i = Math.floor(x0 * K); i <= Math.floor(x1 * K); i++) for (let j = Math.floor(y0 * K); j <= Math.floor(y1 * K); j++) {
+        const k = `${i},${j}`; (grid.get(k) || grid.set(k, []).get(k)!).push(r)
+      }
+    }
+    const inRing = (r: number[][], x: number, y: number) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const [xi, yi] = r[i], [xj, yj] = r[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c } return c }
+    return fs.filter(f => {
+      const ring = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0] : f.geometry.coordinates[0][0]
+      const x = ring.reduce((a: number, p: number[]) => a + p[0], 0) / ring.length, y = ring.reduce((a: number, p: number[]) => a + p[1], 0) / ring.length
+      return !(grid.get(`${Math.floor(x * K)},${Math.floor(y * K)}`) || []).some(r => inRing(r, x, y))
+    })
   }
 
   private loadBus() {
@@ -389,6 +485,9 @@ export class World {
     if (!f) return this.onPick?.(null)
     let p: any = f.properties; const id = f.layer.id
     const fmt = (t: any) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    const L = layerOwner(id)
+    if (L) { const r = L.pick(p)
+      return this.onPick?.({ view: L.view, title: r.title, rows: r.rows, href: r.href || L.href, source: `${L.name}. ${L.licence}`, links: r.href && r.href !== L.href ? [['Source', L.href]] : undefined }) }
     if (id.startsWith('h-bld-')) {
       const r = this.regions.get(id.slice(6)), hk = r?.source === 'hk', m1 = (k: string, v: any, f = (x: any) => String(x)) => v != null && v !== '' ? [[k, f(v)]] as [string, string][] : []
       return this.onPick?.({ view: 'height', title: p.name || p['names.primary'] || p.BuildingNameEN || 'Building',

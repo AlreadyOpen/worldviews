@@ -2,7 +2,8 @@
 import * as D from './data'
 import * as Sat from './sats'
 import { AIRPORT_TYPES, ALT_STOPS, LAYERS, airportColors, type World } from './engine'
-import { HEIGHT_STOPS, HK, INDICATORS_NOTE, MAG_STOPS, RAMPS, VIEWS, inHK, type ViewId } from './views'
+import { ADELAIDE, HEIGHT_STOPS, HK, INDICATORS_NOTE, MAG_STOPS, RAMPS, VIEWS, inHK, type ViewId } from './views'
+import { AADT_STOPS, DENSITY_STOPS, LOCAL, cellsFor, firstXY, meets, type Bbox } from './local'
 import type { LegendSpec } from './legend'
 
 export type Answer = {
@@ -11,6 +12,7 @@ export type Answer = {
   updated?: string; stale?: boolean; errors?: string[]
   jump?: { label: string; center: [number, number]; zoom: number }
   legend?: LegendSpec
+  credits?: { name: string; href: string; licence: string }[]   // country sources that are in view
 }
 
 const nf = new Intl.NumberFormat('en', { maximumFractionDigits: 1 })
@@ -27,7 +29,37 @@ const km = (a: number[], b: number[]) => {
   return Math.round(Math.sqrt(x * x + y * y) * 6371)
 }
 
+// Country layers (local.ts) in this view and in view now: one line each with its count, its legend items and its credit; a
+// source that failed says so.
 export async function answer(w: World, v: ViewId): Promise<Answer> {
+  const a = await base(w, v), m = w.map, b = m.getBounds(), box: Bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], z = m.getZoom()
+  const lines: string[] = [], none: string[] = [], errors: string[] = [], items: any[] = [], credits: Answer['credits'] = []
+  for (const L of LOCAL) {
+    const sub = w.state.sub[v] || 'all'
+    if (L.view !== v || !meets(box, L.area) || (L.cat && sub !== 'all' && sub !== L.cat)) continue
+    credits.push(L)
+    if (z < L.minzoom || (L.cell && !cellsFor(box, L.area, L.cell))) { lines.push(`${L.what[0].toUpperCase()}${L.what.slice(1)}: zoom in to load them`); continue }
+    if (w.localErr[L.id]) { errors.push(`${L.name}: source unavailable`); continue }
+    const fs = w.localFeats[L.id]
+    if (!fs) continue
+    const n = fs.filter(f => { const p = firstXY(f.geometry); return p && b.contains(p as any) }).length
+    if (n || L.summary) lines.push(L.summary ? L.summary(fs) : `${L.what[0].toUpperCase()}${L.what.slice(1)}: ${nf.format(n)} in view`)
+    else none.push(L.what.replace(/ \(.*\)$/, ''))
+    if (n && L.legend) items.push(...L.legend(w.theme === 'dark'))
+  }
+  if (!credits.length) return a
+  const out: Answer = { ...a, credits, errors: [...(a.errors || []), ...errors] }
+  if (none.length) lines.push(`None in view: ${none.join('; ')}`)
+  if (lines.length) {
+    out.detail = [a.detail, lines.join('. ') + '.'].filter(Boolean).join(' ')
+    if (out.status === 'empty' && w.state.views.includes(v)) out.status = 'ok'
+  }
+  if (items.length && out.legend?.kind === 'items') out.legend = { ...out.legend, items: [...out.legend.items, ...items] }
+  else if (items.length && out.legend) out.legend = { ...out.legend, note: [out.legend.note, items.map(i => i.label).join('. ') + '.'].filter(Boolean).join(' ') }
+  return out
+}
+
+async function base(w: World, v: ViewId): Promise<Answer> {
   const m = w.map, c = m.getCenter().toArray(), z = m.getZoom(), th = w.theme, b = m.getBounds()
   const inView = (p: number[]) => b.contains(p as any)
   if (v === 'airports') {
@@ -211,6 +243,31 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
     const pillars = ps.map((p, i) => `${D.BREADY_PILLARS[i]} ${p.data?.by[place.ISO3_CODE] ? nf.format(p.data.by[place.ISO3_CODE].v) : 'None'}`).join(', ')
     return { status: 'ok', legend, updated, value: nf.format(r.v), counts: `of 100, ${label.toLowerCase()}, ${place.NAME_ENGL} (${r.year})`,
       detail: `${ordinal(ranked.findIndex(([k]) => k === place.ISO3_CODE) + 1)} of ${ranked.length} economies scored. Pillars: ${pillars}.` }
+  }
+  if (v === 'traffic') {
+    const sub = w.state.sub.traffic || 'all', V = RAMPS.viridis[th]
+    const legend: LegendSpec = sub === 'crashes' ? { kind: 'items', title: 'Crash locations, worst crash at each', items: [] }
+      : { kind: 'ramp', title: 'Vehicles per day (AADT estimate)', colors: V, ticks: AADT_STOPS.map((x, i) => i === AADT_STOPS.length - 1 ? `${nf.format(x)}+` : nf.format(x)), note: 'Thicker lines carry more traffic. Crash locations appear from suburb zoom.' }
+    if (!meets([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], [129, -38.2, 141.1, -25.9]))
+      return { status: 'outside', legend, detail: 'Traffic volumes and crash locations are mapped for South Australia so far, from its Department for Infrastructure and Transport. Other places need their road agency\'s counts first.', jump: { label: 'Go to Adelaide', ...ADELAIDE } }
+    const roads = (w.localFeats['L-sa-aadt'] || []).filter(f => f.geometry.coordinates.some((p: any) => inView(typeof p[0] === 'number' ? p : p[0])))
+    const top = roads.reduce((x: any, f: any) => (!x || f.properties.v > x.properties.v ? f : x), null)
+    if (sub !== 'crashes' && top) return { status: 'ok', legend, updated: 'SA DIT traffic volume estimates, 2026 release', value: nf.format(top.properties.v), counts: 'vehicles a day on the busiest road section in view',
+      detail: `Road ${top.properties.road}${top.properties.cv != null ? `, ${top.properties.cv}% heavy vehicles` : ''}.` }
+    const cr = (w.localFeats['L-sa-crash'] || []).filter(f => inView(f.geometry.coordinates))
+    if (cr.length) { const sum = (k: string) => cr.reduce((s2: number, f: any) => s2 + (f.properties[k] || 0), 0)
+      return { status: 'ok', legend, updated: 'SA DIT road crash data, 2020 to 2024', value: nf.format(sum('n')), counts: 'crashes in view, 2020 to 2024',
+        detail: `${nf.format(sum('fat'))} fatal, ${nf.format(sum('si'))} with serious injury. ${nf.format(sum('killed'))} people killed.` } }
+    return { status: w.pending.size ? 'loading' : 'empty', legend, detail: z < 12 && sub === 'crashes' ? 'Zoom in to a suburb to load crash locations.' : 'No counted roads in view.', jump: { label: 'Go to Adelaide', ...ADELAIDE } }
+  }
+  // Australia from suburb zoom: ABS small areas (SA2) in place of the country figure
+  const sa2 = z >= 9 ? (w.localFeats['L-abs-sa2'] || []).filter(f => f.properties.pop != null && inView(firstXY(f.geometry)!)) : []
+  if (v === 'people' && sa2.length) {
+    const pop = sa2.reduce((s2, f) => s2 + f.properties.pop, 0), wsum = (k: string) => sa2.reduce((s2, f) => s2 + (f.properties[k] || 0) * f.properties.pop, 0) / pop
+    const dense = sa2.reduce((x, f) => (f.properties.density > x.properties.density ? f : x))
+    return { status: 'ok', updated: `ABS estimated resident population, ${sa2[0].properties.year}`, value: big.format(pop), counts: `people in the ${sa2.length} ABS small areas (SA2) in view`,
+      legend: { kind: 'ramp', title: 'People per km², ABS SA2 areas', colors: RAMPS.cividis[th], ticks: DENSITY_STOPS.map((x, i) => i === DENSITY_STOPS.length - 1 ? `${nf.format(x)}+` : nf.format(x)) },
+      detail: `${nf.format(wsum('kids'))}% aged 0 to 14, ${nf.format(wsum('old'))}% aged 65 and over. Densest: ${dense.properties.sa2_name_2021}, ${nf.format(dense.properties.density)} per km².` }
   }
   const ind = (w.state.sub.people || 'density') as D.Indicator
   const meta = D.INDICATORS[ind]
