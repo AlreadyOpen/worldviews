@@ -55,7 +55,7 @@ export class World {
     this.theme = theme
     this.map = new maplibregl.Map({ container: el, style: STYLE[theme], ...camera, maxPitch: 80, attributionControl: { compact: true },
       canvasContextAttributes: { preserveDrawingBuffer: true } } as any)
-    this.map.on('style.load', () => { this.installed = false; this.install(++this.gen).catch(e => console.error('world-views install failed', e)) })
+    this.map.on('style.load', () => { this.installed = false; this.install(++this.gen).catch(e => console.error('worldviews install failed', e)) })
     this.map.on('moveend', () => { this.loadBus(); this.onUpdate?.() })
     this.map.on('click', e => this.pick(e.point))
     // Start with the attribution folded (the i button opens it), so it does not run under the panels.
