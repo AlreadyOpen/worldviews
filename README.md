@@ -54,6 +54,9 @@ them. Code: `src/local-au.ts`, `src/local-tw.ts`, `src/local-us.ts` (shared help
 | Australia | City card | [AEMO NEM summary](https://visualisations.aemo.com.au): price and demand now in the NEM region at the map centre | AEMO copyright permissions (any purpose, with attribution) |
 | Taiwan | What is happening now? | [CWA open data](https://opendata.cwa.gov.tw) (public S3 bucket): warnings by county, earthquake reports, weather stations | Open Government Data License 1.0 |
 | Taiwan | Who lives here? | [MOI household registration](https://www.ris.gov.tw/app/portal/346) ODRP014 (single-year ages) and ODRP020 (education), by county | Open Government Data License 1.0 |
+| United States | What is happening now? | [NWS watches, warnings and advisories](https://www.weather.gov), [SPC day 1 outlook](https://www.spc.noaa.gov/products/outlook/), [NIFC current wildfires and perimeters](https://data-nifc.opendata.arcgis.com) | US public domain |
+| United States | How tall is it? | [FEMA/ORNL USA Structures](https://gis-fema.hub.arcgis.com/pages/usa-structures) (buildings with a LiDAR height, where Overture has none) | CC BY 4.0 |
+| United States | What is overhead? / Where can I fly from? | [FAA class airspace and airports](https://adds-faa.opendata.arcgis.com) | US public domain |
 
 Each view shows its sources and licences in the app. "None" in a figure means the source does not publish one for that place.
 
