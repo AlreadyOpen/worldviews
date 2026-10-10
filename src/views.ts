@@ -1,9 +1,9 @@
 // The info views: one question each, with its sub-maps (V5 topics), legend ramp and copy. Ramps are colour-blind safe
 // (viridis, inferno, cividis families) and every ramp has a second channel: height, size or a label.
-// 'rules' (a noncommercial source) exists only in the full edition: in WorldViews Libre every
-// branch below is dead code, so the view, its copy and its data URL are not in the bundle.
+// 'rules' runs on RISE (CC BY 4.0) in both editions; the full edition adds a noncommercial detail source as one more
+// sub-choice. Every branch for that source is dead code in WorldViews Libre, so its copy and URL are not in the bundle.
 export type ViewId = 'height' | 'hazards' | 'transit' | 'people' | 'business' | 'rules'
-export const VIEW_IDS: ViewId[] = ['height', 'hazards', 'transit', 'people', 'business', ...(import.meta.env.PUBLIC_EDITION === 'full' ? ['rules' as const] : [])]
+export const VIEW_IDS: ViewId[] = ['height', 'hazards', 'transit', 'people', 'business', 'rules']
 
 export const VIEWS: Record<ViewId, {
   question: string; noun: string; topic: string; icon: string
@@ -23,8 +23,11 @@ export const VIEWS: Record<ViewId, {
     subs: [{ id: 'BE', label: 'Business entry' }, { id: 'BL', label: 'Business location' }, { id: 'US', label: 'Utility services' },
       { id: 'LB', label: 'Labor' }, { id: 'FS', label: 'Financial services' }, { id: 'IT', label: 'International trade' }, { id: 'TX', label: 'Taxation' },
       { id: 'DR', label: 'Dispute resolution' }, { id: 'MC', label: 'Market competition' }, { id: 'BI', label: 'Business insolvency' }] },
-  ...(import.meta.env.PUBLIC_EDITION === 'full' ? { rules: { question: 'What do building energy rules require?', noun: 'Building rules', topic: 'Building rules', icon: 'ph:leaf',
-    subs: [{ id: 'status', label: 'Code and enforcement' }] } } : {}) as any,
+  rules: { question: 'What do building energy rules require?', noun: 'Building rules', topic: 'Building rules', icon: 'ph:leaf',
+    subs: [{ id: 'BEC', label: 'Building Energy Codes' }, { id: 'ELS', label: 'Energy Labeling Systems' },
+      { id: 'MEEP', label: 'Minimum Energy Efficiency Performance Standards' }, { id: 'IMPS', label: 'Energy Efficiency in Public Sector' },
+      { id: 'FMEE', label: 'Financing Mechanisms for Energy Efficiency' },
+      ...(import.meta.env.PUBLIC_EDITION === 'full' ? [{ id: 'bg', label: 'Building Green, code and enforcement (noncommercial)' }] : [])] },
 }
 
 // Ramps per theme: the low end must stay visible on the basemap (dark purple vanishes on a dark map, pale yellow on a light one).
@@ -52,8 +55,9 @@ export const SOURCES = {
     { name: 'Natural Earth countries', href: 'https://www.naturalearthdata.com', licence: 'Public domain' },
     { name: 'AlreadyOpen world-places: official figures (Taiwan, Jersey, Åland, Pacific places)', href: 'https://huggingface.co/datasets/alreadyopen/world-places', licence: 'per source' },
   ],
-  ...(import.meta.env.PUBLIC_EDITION === 'full' ? { rules: [{ name: 'World Bank, Building Green', href: 'https://www.worldbank.org/en/building-green',
-    licence: 'Noncommercial use with attribution (World Bank). World Bank. 2025. Unlocking Efficiency: The Global Landscape of Building Energy Regulations and their Enforcement. © World Bank' }] } : {}) as any,
+  rules: [{ name: 'World Bank, RISE (Regulatory Indicators for Sustainable Energy)', href: 'https://rise.esmap.org', licence: 'CC BY 4.0', notSub: 'bg' },
+    ...(import.meta.env.PUBLIC_EDITION === 'full' ? [{ name: 'World Bank, Building Green', href: 'https://www.worldbank.org/en/building-green',
+    licence: 'Noncommercial use with attribution (World Bank). World Bank. 2025. Unlocking Efficiency: The Global Landscape of Building Energy Regulations and their Enforcement. © World Bank', sub: 'bg' }] : [])],
   business: [{ name: 'World Bank, B-READY (Business Ready)', href: 'https://www.worldbank.org/en/businessready', licence: 'CC BY 4.0' }],
 }
 

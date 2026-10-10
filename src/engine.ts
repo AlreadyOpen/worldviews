@@ -23,7 +23,7 @@ export const LAYERS: Record<ViewId | 'base', string[]> = {
   transit: ['t-bus', 't-mtr', 't-mtr-st', 't-mtr-st-icon'],
   people: ['p-fill', 'p-line'],
   business: ['bz-fill', 'bz-line'],
-  ...(import.meta.env.PUBLIC_EDITION === 'full' ? { rules: ['r-fill', 'r-line'] } : {}) as any,
+  rules: ['r-fill', 'r-line'],
 }
 const EONET_CAT: Record<string, string> = { severeStorms: 'storms', floods: 'floods', drought: 'floods', wildfires: 'fire', volcanoes: 'fire' }
 // Which icon each hazard kind gets (GDACS event type, NASA EONET category id).
@@ -47,6 +47,7 @@ export class World {
   private peopleBy: Record<string, { v: number; year: string; src?: string }> = {}
   private peopleRamp: any = null
   private bizBy: Record<string, { v: number; year: string }> = {}
+  private riseBy: Record<string, { v: number; year: string }> = {}
   private noData: any = null
   private gen = 0
 
@@ -115,7 +116,7 @@ export class World {
     m.addLayer({ id: 'bz-fill', type: 'fill', source: 'people', 'source-layer': 'countries', layout: hid,
       paint: { 'fill-color': n.nodata, 'fill-opacity': 0.78 } })
     m.addLayer({ id: 'bz-line', type: 'line', source: 'people', 'source-layer': 'countries', layout: hid, paint: { 'line-color': dark ? '#1d2120' : '#fbfcfa', 'line-width': 0.6 } })
-    if (import.meta.env.PUBLIC_EDITION === 'full') for (const [id, type, paint] of [['r-fill', 'fill', { 'fill-color': n.nodata, 'fill-opacity': 0.78 }],
+    for (const [id, type, paint] of [['r-fill', 'fill', { 'fill-color': n.nodata, 'fill-opacity': 0.78 }],
       ['r-line', 'line', { 'line-color': dark ? '#1d2120' : '#fbfcfa', 'line-width': 0.6 }]] as const)
       m.addLayer({ id, type, source: 'people', 'source-layer': 'countries', layout: hid, paint } as any)
     m.addLayer({ id: 'b-mtr', type: 'line', source: 'mtr', layout: { ...hid, 'line-cap': 'round' }, paint: { 'line-color': n.line, 'line-width': 1.6, 'line-opacity': 0.8 } })
@@ -163,7 +164,7 @@ export class World {
     if (s.views.includes('hazards')) this.loadHazards(s.time === 't3' ? 'month' : 'day')
     if (s.views.includes('people') || force || prev.sub.people !== s.sub.people) this.loadPeople((s.sub.people || 'density') as D.Indicator)
     if (s.views.includes('business') && (force || prev.sub.business !== s.sub.business || !prev.views.includes('business'))) this.loadBusiness(s.sub.business || 'BE')
-    if (import.meta.env.PUBLIC_EDITION === 'full' && s.views.includes('rules') && (force || !prev.views.includes('rules'))) this.loadRules()
+    if (s.views.includes('rules') && (force || prev.sub.rules !== s.sub.rules || !prev.views.includes('rules'))) this.loadRules(s.sub.rules || 'BEC')
     if (s.views.includes('transit')) this.loadBus()
     this.filters()
     this.onUpdate?.()
@@ -238,9 +239,19 @@ export class World {
     }))
   }
 
-  // Building-rules status, categorical (four ordered classes on the viridis ramp); places not covered stay neutral.
-  private loadRules() {
-    if (!(import.meta.env.PUBLIC_EDITION === 'full')) return
+  // RISE score on a fixed 0 to 100 viridis scale; in the full edition, sub 'bg' = Building Green status, categorical (four
+  // ordered classes on the same ramp). Places not covered stay neutral.
+  private loadRules(sub: string) {
+    if (!(import.meta.env.PUBLIC_EDITION === 'full' && sub === 'bg')) {
+      this.track(D.rise(sub === 'bg' ? 'BEC' : sub).then(f => {
+        if (!this.installed || (this.state.sub.rules || 'BEC') !== sub) return
+        this.riseBy = f.data?.by || {}
+        const pairs = Object.entries(this.riseBy).flatMap(([k, r]) => [k, r.v])
+        const v: any = pairs.length ? ['match', D.ISO, ...pairs, -1] : -1
+        this.map.setPaintProperty('r-fill', 'fill-color', ['case', ['>=', v, 0], ramp(v, [0, 25, 50, 75, 100], RAMPS.viridis[this.theme]), this.noData])
+      }))
+      return
+    }
     this.track(D.buildingGreen().then(f => {
       if (!this.installed || !f.data) return
       const V = RAMPS.viridis[this.theme], col = [V[3], V[2], V[1], V[0]]
@@ -296,6 +307,9 @@ export class World {
     if (id === 'bz-fill') { const iso = D.isoOf(p), r = this.bizBy[iso], t = this.state.sub.business || 'BE'
       return this.onPick?.({ view: 'business', title: p.NAME, source: 'World Bank, B-READY (CC BY 4.0)', href: 'https://www.worldbank.org/en/businessready',
         rows: [[`${VIEWS.business.subs.find(x => x.id === t)?.label}, score`, r ? `${Math.round(r.v * 10) / 10} of 100` : 'Not covered by B-READY yet'], ['Year', r?.year || 'None']] }) }
+    if (id === 'r-fill' && !(import.meta.env.PUBLIC_EDITION === 'full' && this.state.sub.rules === 'bg')) { const r = this.riseBy[D.isoOf(p)], t = this.state.sub.rules || 'BEC'
+      return this.onPick?.({ view: 'rules', title: p.NAME, source: 'World Bank, RISE (CC BY 4.0)', href: 'https://rise.esmap.org',
+        rows: [[`${D.RISE_LABEL[t]}, score`, r ? `${Math.round(r.v * 10) / 10} of 100` : 'Not covered by RISE'], ['Year', r?.year || 'None']] }) }
     if (import.meta.env.PUBLIC_EDITION === 'full' && id === 'r-fill') { const c = (D.peek('building-green') as any)?.data?.countries?.[D.isoOf(p)]
       return this.onPick?.({ view: 'rules', title: p.NAME, source: 'World Bank, Building Green (noncommercial use with attribution)', href: 'https://www.worldbank.org/en/building-green',
         rows: c ? [['Status', D.BG_STATUS[D.bgStatus(c)]], ['Code', c['BEC-INFO-02'] === '..' ? 'Not reported' : c['BEC-INFO-02']], ['Measured in', c['DEM-INFO-03']]] : [['Status', 'Not covered by Building Green']] }) }

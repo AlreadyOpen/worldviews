@@ -119,6 +119,23 @@ export const buildingGreen = () => import.meta.env.PUBLIC_EDITION === 'full'
 export const BG_STATUS: string[] = import.meta.env.PUBLIC_EDITION === 'full' ? ['Unified code, enforced', 'Unified code, enforced in part', 'Unified code, not enforced or not reported', 'Some standards, no unified code'] : []
 export const BG_SHORT: string[] = import.meta.env.PUBLIC_EDITION === 'full' ? ['Enforced', 'Enforced in part', 'Not enforced or not reported', 'Some standards only'] : []
 export const bgStatus = (c: any) => c['BEC-INFO-01'] !== 'Unified BEC' ? 3 : c['ENF-INFO-01'] === 'Yes' ? 0 : String(c['ENF-INFO-01']).startsWith('Yes') ? 1 : 2
+// World Bank RISE (Regulatory Indicators for Sustainable Energy), CC BY 4.0, via Data360: one row per economy and year
+// (2010 onwards), score 0 to 100. Paged, up to 1000 rows a page. `by` = latest year per economy, `series` = every year.
+export const RISE_LABEL: Record<string, string> = { BEC: 'Building Energy Codes', ELS: 'Energy Labeling Systems',
+  MEEP: 'Minimum Energy Efficiency Performance Standards', IMPS: 'Energy Efficiency in Public Sector', FMEE: 'Financing Mechanisms for Energy Efficiency' }
+export const rise = (ind: string) => once('rise-' + ind, async () => {
+  const rows: any[] = []
+  for (let skip = 0; ; skip += 1000) {
+    const p = await json(`https://data360api.worldbank.org/data360/data?DATABASE_ID=WB_RISE&INDICATOR=WB_RISE_EE_${ind}&skip=${skip}`)
+    rows.push(...p.value)
+    if (!p.value.length || rows.length >= p.count) break
+  }
+  const series: Record<string, [number, number][]> = {}
+  for (const r of rows) if (r.OBS_VALUE != null) (series[r.REF_AREA] ||= []).push([+r.TIME_PERIOD, +r.OBS_VALUE])
+  const by: Record<string, { v: number; year: string }> = {}
+  for (const [k, s] of Object.entries(series)) { s.sort((a, b) => a[0] - b[0]); by[k] = { v: s.at(-1)![1], year: String(s.at(-1)![0]) } }
+  return { by, series }
+})
 // World Bank B-READY (CC BY 4.0): one indicator, latest value per economy, keyed by ISO3. Codes IC.BRE.<topic>.OS (topic
 // score) and .P1/.P2/.P3 (its pillars); IC.BRE.P1.RF, P2.PS, P3.OE are the three pillars across all ten topics.
 export const BREADY_PILLARS = ['Regulatory framework', 'Public services', 'Operational efficiency']

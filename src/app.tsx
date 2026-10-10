@@ -403,7 +403,7 @@ function AnswerPanel({ s, setS, view, a, all, pick, clearPick, jump, collapsed, 
         </section>
       )}
       <div className="meta">
-        {SOURCES[view].map(src => <span key={src.name}><a href={src.href} target="_blank" rel="noreferrer">{src.name}</a>. {src.licence}</span>)}
+        {(SOURCES[view] as any[]).filter(src => { const sb = s.sub[view] || VIEWS[view].subs[0].id; return (!src.sub || src.sub === sb) && src.notSub !== sb }).map(src => <span key={src.name}><a href={src.href} target="_blank" rel="noreferrer">{src.name}</a>. {src.licence}</span>)}
       </div>
       {card}
     </aside>
@@ -435,9 +435,11 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
         ['Aged 65+', val(2) ? `${nf.format(val(2)!.v)}%` : 'None'], ['In towns and cities', val(3) ? `${nf.format(val(3)!.v)}%` : 'None']]
       const biz = await D.breadyOverall(p.ISO3_CODE)
       // B-READY publishes no single score: this is the mean of its three pillars across the ten topics
+      const bec = (await D.rise('BEC')).data?.by[p.ISO3_CODE]
+      stats.push(['Building energy codes (RISE score)', bec ? `${nf.format(bec.v)} of 100 (${bec.year})` : 'None'])
       if (import.meta.env.PUBLIC_EDITION === 'full') {
         const bg = (await D.buildingGreen()).data?.countries?.[p.ISO3_CODE]
-        stats.push(['Building energy code', bg ? D.BG_SHORT[D.bgStatus(bg)] : 'None'])
+        stats.push(['Building energy code (Building Green)', bg ? D.BG_SHORT[D.bgStatus(bg)] : 'None'])
       }
       stats.push(['Business (B-READY, mean of pillars)', biz != null ? `${nf.format(biz)} of 100` : 'None'])
       const srcs = [...new Set([0, 1, 2, 3].map(i => val(i)).filter(Boolean).map(r => r!.src || 'World Bank'))]

@@ -98,6 +98,30 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
     return { status: routes.size || stations.size ? 'ok' : w.pending.size ? 'loading' : 'empty', legend, updated, value: nf.format(routes.size), counts: 'bus and minibus routes in view',
       detail: `${stations.size} MTR stations in view.`, ...(routes.size || stations.size ? {} : { detail: 'No routes here. Try the harbour front.', jump: { label: 'Go to Central', ...HK } }) }
   }
+  if (v === 'rules' && !(import.meta.env.PUBLIC_EDITION === 'full' && w.state.sub.rules === 'bg')) {
+    const t = w.state.sub.rules || 'BEC', label = D.RISE_LABEL[t]
+    const [cs, r] = await Promise.all([D.countries(), D.rise(t)])
+    const legend: LegendSpec = { kind: 'ramp', title: `${label}, RISE score`, colors: RAMPS.viridis[th], ticks: ['0', '25', '50', '75', '100'],
+      note: 'Grey: not covered by RISE (140 economies).' }
+    if (!cs.data || !r.data) return { status: 'error', legend, errors: [cs.error && `Natural Earth: ${cs.error}`, r.error && `World Bank Data360: ${r.error}`].filter(Boolean) as string[] }
+    const ranked = Object.entries(r.data.by).sort((a, b) => b[1].v - a[1].v)
+    const latest = ranked.reduce((m, [, x]) => (x.year > m ? x.year : m), '')
+    const updated = `World Bank RISE, scores to ${latest}`
+    const name = (k: string) => cs.data.features.find((f: any) => f.properties.ISO3_CODE === k)?.properties.NAME_ENGL || k
+    if (z < 3 && ranked.length) {
+      const end = (w: string, v: number) => { const n = ranked.filter(([, y]) => y.v === v); return n.length > 1 ? `${w}: ${nf.format(v)}, shared by ${n.length} economies.` : `${w}: ${name(n[0][0])}, ${nf.format(v)}.` }
+      const mean = (y: number) => { const xs = Object.values(r.data!.series).map(s => s.find(p => p[0] === y)?.[1]).filter(x => x != null) as number[]; return xs.reduce((a, b) => a + b, 0) / xs.length }
+      return { status: 'ok', legend, updated, value: nf.format(mean(+latest)), counts: `of 100, average of ${ranked.length} economies (${latest})`,
+        detail: `${nf.format(mean(2010))} in 2010. ${end('Highest', ranked[0][1].v)} ${end('Lowest', ranked.at(-1)![1].v)} Click a country, or zoom in, for its score.` }
+    }
+    const place = await D.placeAt(cs.data, c)
+    if (!place) return { status: 'empty', legend, updated, detail: 'The centre of the map is over the sea. Move it onto land, or click a country.' }
+    const x = r.data.by[place.ISO3_CODE], ser = r.data.series[place.ISO3_CODE]
+    if (!x) return { status: 'empty', legend, updated, detail: `${place.NAME_ENGL}: not covered by RISE.` }
+    const rank = 1 + ranked.filter(([, y]) => y.v > x.v).length
+    return { status: 'ok', legend, updated, value: nf.format(x.v), counts: `of 100, ${label.toLowerCase()}, ${place.NAME_ENGL} (${x.year})`,
+      detail: `${ordinal(rank)} of ${ranked.length} economies scored. Trend: ${nf.format(ser[0][1])} in ${ser[0][0]}, ${nf.format(x.v)} in ${x.year}.` }
+  }
   if (import.meta.env.PUBLIC_EDITION === 'full' && v === 'rules') {
     const V = RAMPS.viridis[th], col = [V[3], V[2], V[1], V[0]]
     const legend: LegendSpec = { kind: 'items', title: 'Building energy code', items: [...D.BG_STATUS.map((label, i) => ({ label, color: col[i], shape: 'dot' as const })),
