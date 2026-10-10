@@ -50,9 +50,17 @@ export const eonet = () => once('eonet', async () => {
   return { type: 'FeatureCollection', features: [...last.values()] }
 })
 
-// GISCO countries (© EuroGeographics for the administrative boundaries): the people view and "which place is this".
-export const countries = () => once('gisco', () =>
-  json('https://gisco-services.ec.europa.eu/distribution/v2/countries/geojson/CNTR_RG_60M_2024_4326.geojson'))
+// Natural Earth 1:50m countries (public domain): the people view and "which place is this". Not GISCO: GISCO folds Taiwan
+// into China, while Natural Earth draws Taiwan, Hong Kong and Macau as their own places. Properties are mapped to the names
+// the rest of the app uses (NAME_ENGL, ISO3_CODE); ISO3 falls back to the admin code, with Kosovo as the World Bank's XKX.
+export const countries = () => once('countries', async () => {
+  const d = await json('https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@v5.1.2/geojson/ne_50m_admin_0_countries.geojson')
+  for (const f of d.features) {
+    const p = f.properties, a3 = p.ISO_A3_EH !== '-99' ? p.ISO_A3_EH : p.ADM0_A3
+    f.properties = { NAME_ENGL: p.NAME, ISO3_CODE: a3 === 'KOS' ? 'XKX' : a3 }
+  }
+  return d
+})
 
 export const INDICATORS = {
   density: { id: 'EN.POP.DNST', unit: 'people per km²', label: 'Population density' },
@@ -67,7 +75,34 @@ export const worldBank = (ind: Indicator) => once('wb-' + ind, async () => {
   const [meta, rows] = await json(`https://api.worldbank.org/v2/country/all/indicator/${INDICATORS[ind].id}?format=json&mrnev=1&per_page=400`)
   const by: Record<string, { v: number; year: string }> = {}
   for (const r of rows || []) if (r.value != null && r.countryiso3code) by[r.countryiso3code] = { v: r.value, year: r.date }
+  // The World Bank publishes nothing for Taiwan; use Taiwan's own household registration figures (urban share: none published there).
+  const tw = (await taiwan()).data                                    // once() returns {data, error}; error = no Taiwan figures
+  const twv = tw && { population: tw.people, aged: tw.aged, density: tw.people / TW_KM2 }[ind as string]
+  if (tw && twv != null) by.TWN = { v: twv, year: tw.month }
   return { by, updated: meta.lastupdated as string }
+})
+
+// Taiwan, Ministry of the Interior, Department of Household Registration open data (CORS *): the latest month's population
+// and share aged 65+, summed over every village (ODRP014). Land area 36,197 km² (Ministry of the Interior).
+export const TW_KM2 = 36197
+export const TW_SOURCE = { name: 'Taiwan Ministry of the Interior, household registration', href: 'https://www.ris.gov.tw/app/portal/346' }
+export const taiwan = () => once('taiwan', async () => {
+  const now = new Date()
+  for (let back = 0; back < 6; back++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - back, 1)
+    const ym = `${d.getFullYear() - 1911}${String(d.getMonth() + 1).padStart(2, '0')}`
+    const url = (pg: number) => `https://www.ris.gov.tw/rs-opendata/api/v1/datastore/ODRP014/${ym}?page=${pg}`
+    const first = await json(url(1))
+    if (!first.responseData) continue                                   // that month is not out yet
+    const pages = [first, ...await Promise.all(Array.from({ length: +first.totalPage - 1 }, (_, i) => json(url(i + 2))))]
+    let people = 0, old = 0
+    for (const r of pages.flatMap((p: any) => p.responseData)) {
+      people += +r.people_total
+      for (const [k, v] of Object.entries(r)) { const a = /^people_age_(\d+)/.exec(k); if (a && +a[1] >= 65) old += +(v as string) }
+    }
+    return { people, aged: 100 * old / people, month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+  }
+  throw new Error('Taiwan household registration: no month in the last six')
 })
 
 export const mtr = () => once('mtr', () => json(`${TRANSIT}/mtr.json`))

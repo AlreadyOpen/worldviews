@@ -84,7 +84,7 @@ export class World {
     const empty: any = { type: 'FeatureCollection', features: [] }
     for (const s of ['quakes', 'gdacs', 'eonet', 'mtr', 'mtr-st', 'bus', 'people'])
       m.addSource(s, { type: 'geojson', data: empty,
-        attribution: { quakes: 'USGS', gdacs: 'GDACS', eonet: 'NASA EONET', mtr: 'hk-transit (Government of the HKSAR data)', people: 'World Bank (CC BY 4.0); © EuroGeographics' }[s] } as any)
+        attribution: { quakes: 'USGS', gdacs: 'GDACS', eonet: 'NASA EONET', mtr: 'hk-transit (Government of the HKSAR data)', people: 'World Bank (CC BY 4.0); Taiwan Ministry of the Interior; Natural Earth' }[s] } as any)
     const P = RAMPS.cividis[this.theme], I = RAMPS.inferno[this.theme]
     m.addLayer({ id: 'p-fill', type: 'fill', source: 'people', layout: hid,
       paint: { 'fill-color': ['case', ['has', 'q'], ramp(['get', 'q'], [0, 0.25, 0.5, 0.75, 1], P), n.nodata], 'fill-opacity': 0.78 } })
@@ -227,7 +227,7 @@ export class World {
       href: 'https://huggingface.co/datasets/alreadyopen/hk-transit', rows: [['Line', p.line], ...(p.code ? [['Station code', p.code]] as [string, string][] : [])] })
     if (id === 't-bus') return this.onPick?.({ view: 'transit', title: `Route ${p.route}`, source: 'hk-transit (TD, KMB, Citybus)', href: 'https://huggingface.co/datasets/alreadyopen/hk-transit',
       rows: [['Operator', p.op], ['Direction', p.dir === 'O' ? 'Outbound' : p.dir === 'I' ? 'Inbound' : String(p.dir)]] })
-    if (id === 'p-fill') return this.onPick?.({ view: 'people', title: p.name, source: 'World Bank, GISCO', href: `https://data.worldbank.org/country/${p.iso3}`,
+    if (id === 'p-fill') return this.onPick?.({ view: 'people', title: p.name, source: p.iso3 === 'TWN' ? 'Taiwan Ministry of the Interior, Natural Earth' : 'World Bank, Natural Earth', href: `https://data.worldbank.org/country/${p.iso3}`,
       rows: [['Value', p.v != null ? `${Math.round(p.v * 10) / 10}` : 'No data'], ['Year', p.year || 'None']] })
   }
 }

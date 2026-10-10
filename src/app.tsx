@@ -441,7 +441,7 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
   const body = (
     <>
       <h2>{place?.name || 'Open sea'}</h2>
-      <p className="sub">{place ? `World Bank, latest year of each figure, ${place.iso3 === 'WLD' ? 'all countries' : 'at the centre of the map'}` : 'Move the map onto land for its numbers'}</p>
+      <p className="sub">{place ? place.iso3 === 'TWN' ? `${D.TW_SOURCE.name}, latest month; no urban share published` : `World Bank, latest year of each figure, ${place.iso3 === 'WLD' ? 'all countries' : 'at the centre of the map'}` : 'Move the map onto land for its numbers'}</p>
       {place && <dl className="stats">{place.stats.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
         {h?.status === 'ok' && <div><dt>Tallest in view</dt><dd>{h.value}</dd></div>}
         {t?.status === 'ok' && <div><dt>{t.counts === 'MTR lines' ? 'MTR lines' : t.counts === 'MTR stations in view' ? 'MTR stations in view' : 'Bus routes in view'}</dt><dd>{t.value}</dd></div>}

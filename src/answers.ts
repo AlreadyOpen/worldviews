@@ -102,7 +102,7 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
   const meta = D.INDICATORS[ind]
   const [cs, wb] = await Promise.all([D.countries(), D.worldBank(ind)])
   const legend: LegendSpec = { kind: 'ramp', title: `${meta.label}, ranked`, colors: RAMPS.cividis[th], ticks: ['Lowest', 'Middle', 'Highest'], note: INDICATORS_NOTE }
-  if (!cs.data || !wb.data) return { status: 'error', legend, errors: [cs.error && `GISCO: ${cs.error}`, wb.error && `World Bank: ${wb.error}`].filter(Boolean) as string[] }
+  if (!cs.data || !wb.data) return { status: 'error', legend, errors: [cs.error && `Natural Earth: ${cs.error}`, wb.error && `World Bank: ${wb.error}`].filter(Boolean) as string[] }
   const sortedAll = [...new Set(cs.data.features.map((f: any) => f.properties.ISO3_CODE))].map(k => ({ k, r: wb.data!.by[k as string] })).filter(x => x.r).sort((a, b) => b.r.v - a.r.v)
   const fmt = (v: number) => ind === 'population' ? big.format(v) : nf.format(v)
   if (z < 3 && sortedAll.length) {
@@ -116,7 +116,7 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
   const r = wb.data.by[place.ISO3_CODE]
   if (!r) return { status: 'empty', legend, detail: `No World Bank value for ${place.NAME_ENGL}.` }
   const sorted = [...new Set(cs.data.features.map((f: any) => f.properties.ISO3_CODE))].map(k => wb.data!.by[k as string]?.v).filter(x => x != null).sort((a, b) => b - a)
-  return { status: 'ok', legend, updated: `World Bank, updated ${wb.data.updated}`, value: ind === 'population' ? big.format(r.v) : nf.format(r.v),
+  return { status: 'ok', legend, updated: place.ISO3_CODE === 'TWN' ? `${D.TW_SOURCE.name}, ${r.year}` : `World Bank, updated ${wb.data.updated}`, value: ind === 'population' ? big.format(r.v) : nf.format(r.v),
     counts: `${meta.unit}, ${place.NAME_ENGL} (${r.year})`, detail: `${ordinal(sorted.indexOf(r.v) + 1)} of ${sorted.length} countries and territories with a value.` }
 }
 

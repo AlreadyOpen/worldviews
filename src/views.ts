@@ -41,7 +41,8 @@ export const SOURCES = {
   transit: [{ name: 'AlreadyOpen hk-transit', href: 'https://huggingface.co/datasets/alreadyopen/hk-transit', licence: 'Government of the HKSAR data (DATA.GOV.HK, CSDI terms); TD, KMB, Citybus, MTR' }],
   people: [
     { name: 'World Bank indicators', href: 'https://data.worldbank.org', licence: 'CC BY 4.0' },
-    { name: 'GISCO countries', href: 'https://ec.europa.eu/eurostat/web/gisco', licence: '© EuroGeographics for the administrative boundaries' },
+    { name: 'Natural Earth countries', href: 'https://www.naturalearthdata.com', licence: 'Public domain' },
+    { name: 'Taiwan Ministry of the Interior, household registration', href: 'https://www.ris.gov.tw/app/portal/346', licence: 'Open Government Data License, version 1.0' },
   ],
 }
 
