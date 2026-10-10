@@ -15,7 +15,11 @@ export const gp = (group: string) => once('gp-' + group, async () => {
   if (!c || Date.now() - c.at >= TTL) {
     const r = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=json`)
     c = r.ok ? { at: Date.now(), rows: await r.json() } : { at: Date.now(), error: `celestrak.org answered ${r.status}, not asking again for 2 hours` }
-    try { localStorage.setItem(key, JSON.stringify(c)) } catch { /* quota or private mode: the memory copy still holds for this visit */ }
+    // localStorage only for groups under about 1 MB, so other caches keep their room. Bigger groups (Starlink, ~4.7 MB) stay in
+    // memory only (once() above): fetched at most once per page visit, so a reload within 2 hours fetches it again.
+    const text = JSON.stringify(c)
+    if (text.length < 1e6) try { localStorage.setItem(key, text) } catch { /* quota or private mode: the memory copy still holds for this visit */ }
+    else try { localStorage.removeItem(key) } catch { /* nothing stored */ }
   }
   if (c.error) throw new Error(c.error)
   const sats: Sat[] = c.rows.map((o: any) => ({ name: o.OBJECT_NAME, id: o.NORAD_CAT_ID, epoch: o.EPOCH, rec: json2satrec(o) }))
