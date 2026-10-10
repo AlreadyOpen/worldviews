@@ -111,7 +111,7 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
     return { status: 'ok', legend, updated: `World Bank, updated ${wb.data.updated}`, value: fmt(sortedAll[0].r.v), counts: `${meta.unit}, highest: ${name(sortedAll[0].k)}`,
       detail: `${world ? `World: ${fmt(world.v)}. ` : ''}Lowest: ${name(sortedAll.at(-1)!.k)}, ${fmt(sortedAll.at(-1)!.r.v)}. Click a country, or zoom in, for its number.` }
   }
-  const place = D.placeAt(cs.data, c)
+  const place = await D.placeAt(cs.data, c)
   if (!place) return { status: 'empty', legend, updated: `World Bank, updated ${wb.data.updated}`, detail: 'The centre of the map is over the sea. Move it onto land, or click a country.' }
   const r = wb.data.by[place.ISO3_CODE]
   if (!r) return { status: 'empty', legend, detail: `No published figure for ${place.NAME_ENGL}.` }

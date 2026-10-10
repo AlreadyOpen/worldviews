@@ -416,7 +416,7 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
   useEffect(() => {
     const m = (window as any).map
     if (!m) return
-    const f = () => setCenter([...m.getCenter().toArray().map((x: number) => +x.toFixed(2)), m.getZoom() < 3 ? 1 : 0])
+    const f = () => setCenter([...m.getCenter().toArray().map((x: number) => +x.toFixed(4)), m.getZoom() < 3 ? 1 : 0])
     f(); m.on('moveend', f)
     return () => m.off('moveend', f)
   }, [(window as any).map])
@@ -425,7 +425,7 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
     let live = true
     ;(async () => {
       const c = await D.countries()
-      const p = center[2] ? { NAME_ENGL: 'The world', ISO3_CODE: 'WLD' } : c.data && D.placeAt(c.data, center)
+      const p = center[2] ? { NAME_ENGL: 'The world', ISO3_CODE: 'WLD' } : c.data && await D.placeAt(c.data, center)
       if (!p) return live && setPlace(null)
       const inds = await Promise.all((Object.keys(D.INDICATORS) as D.Indicator[]).map(k => D.worldBank(k)))
       const nf = new Intl.NumberFormat('en', { maximumFractionDigits: 1 }), big = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })

@@ -37,6 +37,9 @@ export class World {
   busStops: any[] = []
   overture?: { url: string; release: string }
   private installed = false
+  private peopleBy: Record<string, { v: number; year: string; src?: string }> = {}
+  private peopleRamp: any = null
+  private noData: any = null
   private gen = 0
 
   constructor(el: HTMLElement, theme: Theme, camera: { center: [number, number]; zoom: number; pitch?: number; bearing?: number }) {
@@ -82,13 +85,25 @@ export class World {
           paint: { 'fill-extrusion-color': color as any, 'fill-extrusion-height': OH, 'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0], 'fill-extrusion-opacity': 0.92 } })
     }
     const empty: any = { type: 'FeatureCollection', features: [] }
-    for (const s of ['quakes', 'gdacs', 'eonet', 'mtr', 'mtr-st', 'bus', 'people'])
+    // Natural Earth 1:10m outlines as tiles (AlreadyOpen world-places): 1:50m sat km off at city zoom (Macau, Helen 2026-10-10)
+    m.addSource('people', { type: 'vector', url: `pmtiles://${D.PLACES}/countries.pmtiles`,
+      attribution: 'World Bank (CC BY 4.0); official statistics via AlreadyOpen world-places; Natural Earth' })
+    m.addLayer({ id: 'countries-hit', type: 'fill', source: 'people', 'source-layer': 'countries', paint: { 'fill-opacity': 0 } })
+    D.setPlaceLookup(async ([x, y]) => {
+      if (!m.getSource('people')) return undefined
+      // wait for this view's tiles; 'idle' never fires again if the map is already idle, so cap the wait
+      if (!m.areTilesLoaded()) await Promise.race([m.once('idle'), new Promise(r => setTimeout(r, 4000))])
+      const f = m.queryRenderedFeatures(m.project([x, y]), { layers: ['countries-hit'] })[0]
+      return f ? { NAME_ENGL: f.properties.NAME, ISO3_CODE: D.isoOf(f.properties) } : null
+    })
+    for (const s of ['quakes', 'gdacs', 'eonet', 'mtr', 'mtr-st', 'bus'])
       m.addSource(s, { type: 'geojson', data: empty,
-        attribution: { quakes: 'USGS', gdacs: 'GDACS', eonet: 'NASA EONET', mtr: 'hk-transit (Government of the HKSAR data)', people: 'World Bank (CC BY 4.0); official statistics via AlreadyOpen world-places; Natural Earth' }[s] } as any)
+        attribution: { quakes: 'USGS', gdacs: 'GDACS', eonet: 'NASA EONET', mtr: 'hk-transit (Government of the HKSAR data)' }[s] } as any)
     const P = RAMPS.cividis[this.theme], I = RAMPS.inferno[this.theme]
-    m.addLayer({ id: 'p-fill', type: 'fill', source: 'people', layout: hid,
-      paint: { 'fill-color': ['case', ['has', 'q'], ramp(['get', 'q'], [0, 0.25, 0.5, 0.75, 1], P), n.nodata], 'fill-opacity': 0.78 } })
-    m.addLayer({ id: 'p-line', type: 'line', source: 'people', layout: hid, paint: { 'line-color': dark ? '#1d2120' : '#fbfcfa', 'line-width': 0.6 } })
+    this.peopleRamp = P; this.noData = n.nodata
+    m.addLayer({ id: 'p-fill', type: 'fill', source: 'people', 'source-layer': 'countries', layout: hid,
+      paint: { 'fill-color': n.nodata, 'fill-opacity': 0.78 } })
+    m.addLayer({ id: 'p-line', type: 'line', source: 'people', 'source-layer': 'countries', layout: hid, paint: { 'line-color': dark ? '#1d2120' : '#fbfcfa', 'line-width': 0.6 } })
     m.addLayer({ id: 'b-mtr', type: 'line', source: 'mtr', layout: { ...hid, 'line-cap': 'round' }, paint: { 'line-color': n.line, 'line-width': 1.6, 'line-opacity': 0.8 } })
     m.addLayer({ id: 't-bus', type: 'line', source: 'bus', layout: { ...hid, 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': dark ? '#c9d1cd' : '#2c3330', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.5, 16, 1.6], 'line-opacity': dark ? 0.11 : 0.22 } })
@@ -178,11 +193,11 @@ export class World {
       const vals = Object.values(w.data?.by || {}).map(x => x.v).sort((a, b) => a - b)
       // Quantile position, so one city-state at 7,000 people/km² does not flatten every other country into one colour.
       const q = (v: number) => { let lo = 0, hi = vals.length; while (lo < hi) { const mid = (lo + hi) >> 1; vals[mid] < v ? lo = mid + 1 : hi = mid } return vals.length > 1 ? lo / (vals.length - 1) : 0 }
-      const features = c.data.features.map((f: any) => {
-        const r = w.data?.by[f.properties.ISO3_CODE]
-        return { ...f, properties: { name: f.properties.NAME_ENGL, iso3: f.properties.ISO3_CODE, ...(r ? { v: r.v, year: r.year, q: q(r.v) } : {}) } }
-      })
-      ;(this.map.getSource('people') as any)?.setData({ type: 'FeatureCollection', features })
+      // colour by country code on the tiles: code -> quantile, -1 = no figure
+      this.peopleBy = w.data?.by || {}
+      const pairs = Object.entries(this.peopleBy).flatMap(([k, r]) => [k, q(r.v)])
+      const qx: any = pairs.length ? ['match', D.ISO, ...pairs, -1] : -1
+      this.map.setPaintProperty('p-fill', 'fill-color', ['case', ['>=', qx, 0], ramp(qx, [0, 0.25, 0.5, 0.75, 1], this.peopleRamp), this.noData])
     }))
   }
 
@@ -211,7 +226,7 @@ export class World {
     const layers = this.state.views.flatMap(v => LAYERS[v]).filter(id => this.map.getLayoutProperty(id, 'visibility') === 'visible')
     const f = layers.length ? this.map.queryRenderedFeatures(pt, { layers })[0] : undefined
     if (!f) return this.onPick?.(null)
-    const p: any = f.properties, id = f.layer.id
+    let p: any = f.properties; const id = f.layer.id
     const fmt = (t: any) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     if (id.startsWith('h-')) {
       const src = id === 'h-ov' ? `Overture Maps ${this.overture?.release || ''}` : id.endsWith('hk') ? 'Lands Department via CSDI (hk-buildings)' : id.endsWith('nl') ? '3DBAG' : 'Overture Maps via world-skylines'
@@ -227,6 +242,7 @@ export class World {
       href: 'https://huggingface.co/datasets/alreadyopen/hk-transit', rows: [['Line', p.line], ...(p.code ? [['Station code', p.code]] as [string, string][] : [])] })
     if (id === 't-bus') return this.onPick?.({ view: 'transit', title: `Route ${p.route}`, source: 'hk-transit (TD, KMB, Citybus)', href: 'https://huggingface.co/datasets/alreadyopen/hk-transit',
       rows: [['Operator', p.op], ['Direction', p.dir === 'O' ? 'Outbound' : p.dir === 'I' ? 'Inbound' : String(p.dir)]] })
+    if (id === 'p-fill') { const iso = D.isoOf(p), r = this.peopleBy[iso]; p = { name: p.NAME, iso3: iso, v: r?.v, year: r?.year } }
     if (id === 'p-fill') return this.onPick?.({ view: 'people', title: p.name, source: 'World Bank or official statistics (world-places), Natural Earth', href: `https://data.worldbank.org/country/${p.iso3}`,
       rows: [['Value', p.v != null ? `${Math.round(p.v * 10) / 10}` : 'No data'], ['Year', p.year || 'None']] })
   }

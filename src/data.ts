@@ -134,8 +134,17 @@ export function busTilesFor(idx: any, [w, s, e, n]: number[]) {
   return out
 }
 
+// The country code a Natural Earth feature stands for, as an expression (tiles) and in JS (same rule as countries()).
+export const ISO = ['case', ['!=', ['get', 'ISO_A3_EH'], '-99'], ['get', 'ISO_A3_EH'], ['match', ['get', 'ADM0_A3'], 'KOS', 'XKX', ['get', 'ADM0_A3']]]
+export const isoOf = (p: any) => p.ISO_A3_EH !== '-99' ? p.ISO_A3_EH : p.ADM0_A3 === 'KOS' ? 'XKX' : p.ADM0_A3
+// The map registers a lookup on the 1:10m country tiles (exact at city zoom); without it, the coarse 1:50m polygons below.
+let lookup: ((ll: number[]) => Promise<any>) | null = null
+export const setPlaceLookup = (f: typeof lookup) => { lookup = f }
+
 // Point in (multi)polygon, even-odd. ponytail: linear scan over ~260 countries per lookup; fine at one lookup per camera stop.
-export function placeAt(fc: any, [x, y]: number[]) {
+export async function placeAt(fc: any, [x, y]: number[]) {
+  const hit = await lookup?.([x, y])
+  if (hit !== undefined) return hit                                    // null = sea, as read from the tiles
   const inRing = (r: number[][]) => {
     let inside = false
     for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
