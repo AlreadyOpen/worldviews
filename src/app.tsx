@@ -231,7 +231,7 @@ function TopBar({ s, setS, theme, onPlace }: { s: S; setS: (f: (x: S) => S) => v
       <div className="search" role="search">
         <iconify-icon icon="ph:magnifying-glass" width="15" />
         <label className="sr" htmlFor="q">Search places</label>
-        <input id="q" type="search" placeholder="Search a country or MTR station" value={q} onChange={e => setQ(e.target.value)} autoComplete="off"
+        <input id="q" type="search" placeholder="Search places and stations" value={q} onChange={e => setQ(e.target.value)} autoComplete="off"
           onKeyDown={e => { if (e.key === 'Enter' && items[0]) { onPlace(items[0]); setQ('') } }} />
         {q.trim().length >= 2 && (
           <ul className="results float" aria-label="Places">
@@ -441,7 +441,7 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
   const body = (
     <>
       <h2>{place?.name || 'Open sea'}</h2>
-      <p className="sub">{place ? `World Bank ${place.year || ''}, ${place.iso3 === 'WLD' ? 'all countries' : 'at the centre of the map'}` : 'Move the map onto land for its numbers'}</p>
+      <p className="sub">{place ? `World Bank, latest year of each figure, ${place.iso3 === 'WLD' ? 'all countries' : 'at the centre of the map'}` : 'Move the map onto land for its numbers'}</p>
       {place && <dl className="stats">{place.stats.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
         {h?.status === 'ok' && <div><dt>Tallest in view</dt><dd>{h.value}</dd></div>}
         {t?.status === 'ok' && <div><dt>{t.counts === 'MTR lines' ? 'MTR lines' : t.counts === 'MTR stations in view' ? 'MTR stations in view' : 'Bus routes in view'}</dt><dd>{t.value}</dd></div>}
