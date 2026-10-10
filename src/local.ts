@@ -4,9 +4,10 @@
 // in view). A source that is down shows as "source unavailable" in the answer, never as a console error.
 import type { Local } from './local-kit'
 import { AU_LAYERS } from './local-au'
+import { TW_LAYERS } from './local-tw'
 export * from './local-kit'
 export { AADT_STOPS, DENSITY_STOPS, NEM_REGION, aemo, auState } from './local-au'
 
-export const LOCAL: Local[] = [...AU_LAYERS]
+export const LOCAL: Local[] = [...AU_LAYERS, ...TW_LAYERS]
 // layer id -> the country layer that owns it, for clicks and sub-maps
 export const layerOwner = (layerId: string) => LOCAL.find(l => layerId === l.id || layerId.startsWith(l.id + '-'))
