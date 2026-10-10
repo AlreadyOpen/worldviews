@@ -192,11 +192,14 @@ export function App() {
       </div>
 
       <TopBar s={s} setS={setS} theme={theme} onPlace={c => wA.current?.map.flyTo({ ...c, duration: reduced() ? 0 : 2500 })} />
-      <Picker s={s} choose={choose} setSub={setSub} openGrid={() => setGrid(true)} />
+      {/* One left column: the picker, then the city card, stacked; the column scrolls inside itself, never over the map's other panels */}
+      <div className="leftcol">
+        <Picker s={s} choose={choose} setSub={setSub} openGrid={() => setGrid(true)} />
+        {s.panel !== 'p1' && <CityCard s={s} ans={ans} choose={choose} />}
+      </div>
 
       <AnswerPanel s={s} setS={setS} view={active} a={active ? ans[active] : undefined} all={ans} pick={pick} clearPick={() => setPick(null)} jump={jump}
         collapsed={collapsed} toggle={() => setCollapsed(c => !c)} card={s.panel !== 'p1' ? <CityCard s={s} ans={ans} choose={choose} inside /> : null} />
-      {s.panel !== 'p1' && <CityCard s={s} ans={ans} choose={choose} />}
 
       {flightShown && <div className="float fly" role="status">Flying to Hong Kong<button className="icon-btn" aria-label="Skip the flight" onClick={() => { wA.current?.map.stop(); wA.current?.map.jumpTo(HK) }}><iconify-icon icon="ph:x" /></button></div>}
       {grid && <AllMaps s={s} w={wA.current!} choose={v => { choose(v); setGrid(false) }} close={() => setGrid(false)} />}
@@ -350,7 +353,16 @@ function AnswerPanel({ s, setS, view, a, all, pick, clearPick, jump, collapsed, 
   return (
     <aside className="float answer" aria-label="Answer" data-collapsed={collapsed}>
       <button className="handle" aria-label={collapsed ? 'Expand the answer' : 'Collapse the answer'} onClick={toggle} />
-      <p className="q"><iconify-icon icon={VIEWS[view].icon} width="15" />{name(view, s)}{s.sub[view] && s.sub[view] !== VIEWS[view].subs[0].id ? `, ${VIEWS[view].subs.find(x => x.id === s.sub[view])?.label.toLowerCase()}` : ''}</p>
+      <p className="q"><iconify-icon icon={VIEWS[view].icon} width="15" />{name(view, s)}</p>
+      {/* The active view's sub-maps, in every layout (V5 also lists them in the picker; on a phone this is the only place) */}
+      {VIEWS[view].subs.length > 1 && (
+        <label className={`subpick${s.switch === 'v5' ? ' dup' : ''}`}>
+          <span className="sr">Map</span>
+          <select value={s.sub[view] || VIEWS[view].subs[0].id} onChange={e => setS(x => ({ ...x, sub: { ...x.sub, [view]: e.target.value } }))}>
+            {VIEWS[view].subs.map(sb => <option key={sb.id} value={sb.id}>{sb.label}</option>)}
+          </select>
+        </label>
+      )}
       <div aria-live="polite">
         {!a || a.status === 'loading' ? <><div className="sk-line" aria-hidden="true" /><div className="sk-line small" aria-hidden="true" /><span className="sr">Loading</span></>
           : a.status === 'error' ? <p className="note warn">Could not load this view. {a.errors?.join('. ')}. Try again in a minute.</p>
@@ -448,9 +460,11 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
     return () => { live = false }
   }, [center?.join()])
   const h = ans.height, t = ans.transit
+  // Collapsed to its header by default on short screens, so the picker above it keeps its room (the column scrolls as well)
+  const [open, setOpen] = useState(() => typeof innerHeight === 'undefined' || innerHeight >= 760)
+  const title = <h2>{place?.name || 'Open sea'}</h2>
   const body = (
     <>
-      <h2>{place?.name || 'Open sea'}</h2>
       <p className="sub">{place ? place.iso3 === 'WLD' ? 'World Bank, latest year of each figure, all countries' : place.srcs.length ? `${place.srcs.join('; ')}, latest of each figure; None = not published` : 'No published figures for this place' : 'Move the map onto land for its numbers'}</p>
       {place && <dl className="stats">{place.stats.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
         {h?.status === 'ok' && <div><dt>Tallest in view</dt><dd>{h.value}</dd></div>}
@@ -469,7 +483,9 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
       )}
     </>
   )
-  return inside ? <div className="card-in">{body}</div> : <section className="float card" aria-label="Place">{body}</section>
+  return inside ? <div className="card-in">{title}{body}</div>
+    : <details className="float card" aria-label="Place" open={open} onToggle={e => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary>{title}<iconify-icon icon="ph:caret-down" width="16" aria-hidden="true" /></summary>{body}</details>
 }
 
 function AllMaps({ s, w, choose, close }: { s: S; w: World; choose: (v: ViewId) => void; close: () => void }) {

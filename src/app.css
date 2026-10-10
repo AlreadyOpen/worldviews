@@ -102,9 +102,27 @@ button, input, select { font: inherit; color: inherit }
 .pick dt { color: var(--ink-2) }
 .pick dd { margin: 0; font-variant-numeric: tabular-nums }
 
+/* Left column: picker then city card in one stacked flow. The column takes the height between the top bar and the
+   attribution, and scrolls inside itself when both do not fit; the empty part lets the map take clicks. */
+.leftcol { position: absolute; z-index: 5; top: 68px; left: var(--s3); bottom: 36px; width: 18.5rem; display: flex; flex-direction: column;
+  gap: var(--s2); overflow-y: auto; overscroll-behavior: contain; pointer-events: none; scrollbar-width: thin }
+.leftcol > * { pointer-events: auto; flex: none }
+@media (min-width: 721px) {
+  .leftcol > .float { position: relative; top: auto; left: auto; bottom: auto }
+  .leftcol .rail { width: 100% }
+}
+
 /* City card */
-.card { left: var(--s3); bottom: 36px; width: 18.5rem; padding: var(--s3) var(--s4) var(--s4) }
+.card { width: 100%; padding: var(--s3) var(--s4) var(--s4) }
+.card summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: var(--s2); cursor: pointer; border-radius: 6px }
+.card summary::-webkit-details-marker { display: none }
+.card summary iconify-icon { color: var(--ink-2); transition: transform 160ms var(--ease) }
+.card:not([open]) { padding-bottom: var(--s3) }
+.card:not([open]) summary iconify-icon { transform: rotate(-90deg) }
+.card[open] summary { margin-bottom: 2px }
 .card h2 { margin: 0; font-size: 1.125rem; font-weight: 650 }
+.subpick { display: block; margin: 0 0 var(--s2) }
+.subpick select { width: 100%; font-size: 0.8125rem; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--ink) }
 .card .sub { font-size: 0.75rem; color: var(--ink-2); margin: 0 0 var(--s3) }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3) var(--s4); margin: 0 }
 .stats div { min-width: 0 }
@@ -153,6 +171,7 @@ button, input, select { font: inherit; color: inherit }
 
 @media (max-width: 720px) {
   .bar { left: var(--s2); right: var(--s2); top: var(--s2); width: auto }
+  .leftcol { display: contents }
   .mark span { display: none }
   .rail { top: auto; bottom: var(--s2); left: var(--s2); right: var(--s2); width: auto; display: flex; overflow-x: auto; gap: var(--s1); scrollbar-width: none }
   .rail-title, .vbtn kbd, .subs { display: none }
@@ -161,16 +180,18 @@ button, input, select { font: inherit; color: inherit }
   .topic { border: 0; padding: 0 }
   .answer { top: auto; right: var(--s2); left: var(--s2); bottom: 70px; width: auto; max-height: 46vh; padding: var(--s3) var(--s4); border-radius: 14px 14px var(--r) var(--r) }
   .answer[data-collapsed='true'] { overflow: hidden }
-  .answer[data-collapsed='true'] > :not(.handle, .q, [aria-live]), .answer[data-collapsed='true'] [aria-live] > :not(.headline, .sk-line) { display: none }
+  .answer[data-collapsed='true'] > :not(.handle, .q, .subpick, [aria-live]), .answer[data-collapsed='true'] [aria-live] > :not(.headline, .sk-line) { display: none }
   .answer .handle { display: block }
   .value { font-size: 2rem }
   .card { display: none }
   .answer .card-in { display: block }
+  .subpick.dup { display: block }
   .maps.split { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr }
   .grid { padding: 64px var(--s3) 80px }
   .fly { bottom: auto; top: 64px }
 }
 .answer .handle { display: none; width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: -4px auto 8px; border: 0; padding: 0; cursor: pointer }
+.subpick.dup { display: none }
 .answer .card-in { display: none; margin-top: var(--s4); padding-top: var(--s3); border-top: 1px solid var(--line) }
 
 @media (prefers-reduced-motion: reduce) {
