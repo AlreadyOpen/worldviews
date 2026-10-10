@@ -77,8 +77,7 @@ export const worldBank = (ind: Indicator) => once('wb-' + ind, async () => {
   const by: Record<string, { v: number; year: string; src?: string }> = {}
   for (const r of rows || []) if (r.value != null && r.countryiso3code) by[r.countryiso3code] = { v: r.value, year: r.date }
   // Places the World Bank leaves out, from their own official statistics (once() returns {data, error}; error = skipped)
-  const tw = (await taiwan()).data, own = [...((await smallPlaces()).data || [])]
-  if (tw) own.push({ iso3: 'TWN', population: tw.people, aged: tw.aged, density: tw.people / TW_KM2, year: tw.month, src: TW_SOURCE.name })
+  const own = (await smallPlaces()).data || []
   for (const o of own) if (!by[o.iso3] && (o as any)[ind] != null) by[o.iso3] = { v: (o as any)[ind], year: o.year, src: o.src }
   // Last resort, population only: Natural Earth's estimate, labelled, so no place is blank (Helen, 2026-10-10: option 4,
   // official sources first, then this). Places with no residents (estimate 0) stay without a figure.
@@ -92,44 +91,16 @@ export const worldBank = (ind: Indicator) => once('wb-' + ind, async () => {
   return { by, updated: meta.lastupdated as string }
 })
 
-// Official figures for places the World Bank leaves out, where the statistics office has a browser-readable API (CORS):
-// the Pacific Community (SPC) .Stat for Cook Islands, Niue, Wallis and Futuna and Pitcairn (mid-year estimates).
+// Official figures for places the World Bank leaves out, from AlreadyOpen/world-places (weekly pipeline: each place's own
+// statistics office; some cannot be read from a browser, e.g. Åland's and Jersey's). One JSON per source, listed in index.json.
+export const PLACES = 'https://huggingface.co/buckets/alreadyopen/world-places/resolve'
 type Own = { iso3: string; population?: number; aged?: number; density?: number; year: string; src: string }
 export const smallPlaces = () => once('small-places', async () => {
-  const out: Own[] = []
-  const spc = { CK: 'COK', NU: 'NIU', WF: 'WLF', PN: 'PCN' } as Record<string, string>
-  const csv: string = await fetch(`https://stats-sdmx-disseminate.pacificdata.org/rest/data/SPC,DF_POP_PROJ,3.0/A.${Object.keys(spc).join('+')}.MIDYEARPOPEST._T._T?endPeriod=${new Date().getFullYear()}&lastNObservations=1&format=csv`).then(r => r.text())
-  const [head, ...rows] = csv.trim().split('\n').map(l => l.split(','))
-  const col = (n: string) => head.indexOf(n)
-  for (const r of rows) out.push({ iso3: spc[r[col('GEO_PICT')]], population: +r[col('OBS_VALUE')], year: r[col('TIME_PERIOD')],
-                                   src: 'Pacific Community (SPC) estimate' })
-  // Åland (ÅSUB PxWeb) answers only a JSON POST and refuses the browser's CORS preflight, so it needs a pipeline snapshot.
-  return out
+  const idx = await json(`${PLACES}/index.json`)
+  const files = await Promise.all(idx.files.map((f: string) => json(`${PLACES}/${f}`)))
+  return files.flatMap((f: any) => f.places.map((p: any): Own => ({ iso3: p.iso3, population: p.population, aged: p.aged_65_plus_pct,
+    density: p.density_per_km2, year: p.period, src: f.publisher })))
 })
-
-// Taiwan, Ministry of the Interior, Department of Household Registration open data (CORS *): the latest month's population
-// and share aged 65+, summed over every village (ODRP014). Land area 36,197 km² (Ministry of the Interior).
-export const TW_KM2 = 36197
-export const TW_SOURCE = { name: 'Taiwan Ministry of the Interior, household registration', href: 'https://www.ris.gov.tw/app/portal/346' }
-export const taiwan = () => once('taiwan', async () => {
-  const now = new Date()
-  for (let back = 0; back < 6; back++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - back, 1)
-    const ym = `${d.getFullYear() - 1911}${String(d.getMonth() + 1).padStart(2, '0')}`
-    const url = (pg: number) => `https://www.ris.gov.tw/rs-opendata/api/v1/datastore/ODRP014/${ym}?page=${pg}`
-    const first = await json(url(1))
-    if (!first.responseData) continue                                   // that month is not out yet
-    const pages = [first, ...await Promise.all(Array.from({ length: +first.totalPage - 1 }, (_, i) => json(url(i + 2))))]
-    let people = 0, old = 0
-    for (const r of pages.flatMap((p: any) => p.responseData)) {
-      people += +r.people_total
-      for (const [k, v] of Object.entries(r)) { const a = /^people_age_(\d+)/.exec(k); if (a && +a[1] >= 65) old += +(v as string) }
-    }
-    return { people, aged: 100 * old / people, month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
-  }
-  throw new Error('Taiwan household registration: no month in the last six')
-})
-
 export const mtr = () => once('mtr', () => json(`${TRANSIT}/mtr.json`))
 export const busIndex = () => once('bus-index', () => json(`${TRANSIT}/bus/index.json`))
 

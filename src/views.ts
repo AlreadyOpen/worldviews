@@ -42,8 +42,7 @@ export const SOURCES = {
   people: [
     { name: 'World Bank indicators', href: 'https://data.worldbank.org', licence: 'CC BY 4.0' },
     { name: 'Natural Earth countries', href: 'https://www.naturalearthdata.com', licence: 'Public domain' },
-    { name: 'Taiwan Ministry of the Interior, household registration', href: 'https://www.ris.gov.tw/app/portal/346', licence: 'Open Government Data License, version 1.0' },
-    { name: 'Pacific Community (SPC) .Stat', href: 'https://stats.pacificdata.org', licence: 'terms at the source' },
+    { name: 'AlreadyOpen world-places: official figures (Taiwan, Jersey, Åland, Pacific places)', href: 'https://huggingface.co/datasets/alreadyopen/world-places', licence: 'per source' },
   ],
 }
 
