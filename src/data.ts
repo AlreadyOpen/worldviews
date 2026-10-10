@@ -109,6 +109,16 @@ const placesFrom = async (base: string) => {
 export const smallPlaces = () => once('small-places', async () => [
   ...await placesFrom(PLACES),
   ...(import.meta.env.PUBLIC_EDITION === 'full' ? await placesFrom('https://huggingface.co/buckets/alreadyopen/world-places-nc/resolve') : [])])
+// Building energy rules (full edition only: noncommercial licence, not open; the libre bundle must not carry the source, its
+// URL or its labels, so everything below sits behind the edition check). Shape: {source, url, cite, licence_note,
+// indicators: {code: name}, countries: {ISO3: {code: value}}}; '..' = not reported. Status = unified code or not (BEC-INFO-01)
+// x enforced in practice (ENF-INFO-01).
+export const buildingGreen = () => import.meta.env.PUBLIC_EDITION === 'full'
+  ? once('building-green', () => json('https://huggingface.co/buckets/alreadyopen/world-building-green/resolve/building-green.json'))
+  : Promise.resolve({ error: 'not in this edition' } as Feed<any>)
+export const BG_STATUS: string[] = import.meta.env.PUBLIC_EDITION === 'full' ? ['Unified code, enforced', 'Unified code, enforced in part', 'Unified code, not enforced or not reported', 'Some standards, no unified code'] : []
+export const BG_SHORT: string[] = import.meta.env.PUBLIC_EDITION === 'full' ? ['Enforced', 'Enforced in part', 'Not enforced or not reported', 'Some standards only'] : []
+export const bgStatus = (c: any) => c['BEC-INFO-01'] !== 'Unified BEC' ? 3 : c['ENF-INFO-01'] === 'Yes' ? 0 : String(c['ENF-INFO-01']).startsWith('Yes') ? 1 : 2
 // World Bank B-READY (CC BY 4.0): one indicator, latest value per economy, keyed by ISO3. Codes IC.BRE.<topic>.OS (topic
 // score) and .P1/.P2/.P3 (its pillars); IC.BRE.P1.RF, P2.PS, P3.OE are the three pillars across all ten topics.
 export const BREADY_PILLARS = ['Regulatory framework', 'Public services', 'Operational efficiency']

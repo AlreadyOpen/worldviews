@@ -98,6 +98,32 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
     return { status: routes.size || stations.size ? 'ok' : w.pending.size ? 'loading' : 'empty', legend, updated, value: nf.format(routes.size), counts: 'bus and minibus routes in view',
       detail: `${stations.size} MTR stations in view.`, ...(routes.size || stations.size ? {} : { detail: 'No routes here. Try the harbour front.', jump: { label: 'Go to Central', ...HK } }) }
   }
+  if (import.meta.env.PUBLIC_EDITION === 'full' && v === 'rules') {
+    const V = RAMPS.viridis[th], col = [V[3], V[2], V[1], V[0]]
+    const legend: LegendSpec = { kind: 'items', title: 'Building energy code', items: [...D.BG_STATUS.map((label, i) => ({ label, color: col[i], shape: 'dot' as const })),
+      { label: 'Not covered by Building Green', color: th === 'dark' ? '#2f3432' : '#e4e6e3', shape: 'dot' as const }],
+      note: 'Each economy is measured in one city; the panel names it.' }
+    const [cs, bg] = await Promise.all([D.countries(), D.buildingGreen()])
+    if (!cs.data || !bg.data) return { status: 'error', legend, errors: [cs.error && `Natural Earth: ${cs.error}`, bg.error && `Building Green: ${bg.error}`].filter(Boolean) as string[] }
+    const updated = 'World Bank Building Green dataset, 2024'
+    const all = Object.values(bg.data.countries) as any[]
+    if (z < 3) return { status: 'ok', legend, updated, value: String(all.filter(c => D.bgStatus(c) === 0).length), counts: `of ${all.length} economies enforce a unified building energy code`,
+      detail: `${all.filter(c => D.bgStatus(c) === 3).length} have some standards but no unified code. Click a country, or zoom in, for what its rules require.` }
+    const place = await D.placeAt(cs.data, c)
+    if (!place) return { status: 'empty', legend, updated, detail: 'The centre of the map is over the sea. Move it onto land, or click a country.' }
+    const b = bg.data.countries[place.ISO3_CODE]
+    if (!b) return { status: 'empty', legend, updated, detail: `${place.NAME_ENGL}: not covered by Building Green.` }
+    const has = (k: string) => String(b[k] ?? '..').trim().startsWith('Yes'), rep = (k: string) => !['..', '', 'undefined'].includes(String(b[k] ?? '..').trim())
+    const list = (m: [string, string][]) => m.filter(([k]) => has(k)).map(([, n]) => n).join(', ') || 'none reported'
+    const covers = list([['BEC-PROJ-02', 'new buildings'], ['BEC-PROJ-03', 'renovations'], ['BEC-PROJ-04', 'additions'], ['BEC-PROJ-05', 'alterations'], ['BEC-PROJ-06', 'repairs'], ['BEC-PROJ-07', 'change of use']])
+    const reqs = list([['REQ-PAS-01', 'passive design'], ['REQ-PAS-09', 'insulation (U-values)'], ['REQ-HVAC-01', 'space heating'], ['REQ-HVAC-02', 'water heating'], ['REQ-HVAC-03', 'cooling'], ['REQ-LIGH-01', 'lighting']])
+    const yn = (k: string) => (rep(k) ? (has(k) ? 'yes' : 'no') : 'not reported')
+    const enf = `Enforced in practice: ${rep('ENF-INFO-01') ? String(b['ENF-INFO-01']).toLowerCase() : 'not reported'}${rep('ENF-INFO-02') ? `, since ${b['ENF-INFO-02']}` : ''}. ` +
+      `Design checked for a building permit: ${yn('ENF-PERM-01')}. Checked before occupancy: ${yn('ENF-POST-01')}. Energy performance disclosed publicly: ${yn('ENF-DISC-01')}.`
+    return { status: 'ok', legend, updated, value: D.BG_SHORT[D.bgStatus(b)], counts: `${place.NAME_ENGL}, measured in ${b['DEM-INFO-03']}`,
+      detail: `${rep('BEC-INFO-02') ? b['BEC-INFO-02'] : 'Code name not reported'}. Approach: ${rep('BEC-INFO-04') ? String(b['BEC-INFO-04']).replace(/\s+\)/, ')').toLowerCase() : 'not reported'}. ` +
+        `Covers ${covers}. Requirements on ${reqs}. ${enf}` }
+  }
   if (v === 'business') {
     const t = w.state.sub.business || 'BE', label = VIEWS.business.subs.find(x => x.id === t)!.label
     const [cs, os, ...ps] = await Promise.all([D.countries(), ...['OS', 'P1', 'P2', 'P3'].map(k => D.bready(`IC.BRE.${t}.${k}`))])

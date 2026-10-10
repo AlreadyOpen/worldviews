@@ -435,7 +435,11 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
         ['Aged 65+', val(2) ? `${nf.format(val(2)!.v)}%` : 'None'], ['In towns and cities', val(3) ? `${nf.format(val(3)!.v)}%` : 'None']]
       const biz = await D.breadyOverall(p.ISO3_CODE)
       // B-READY publishes no single score: this is the mean of its three pillars across the ten topics
-      stats.push(['Business (B-READY overall)', biz != null ? `${nf.format(biz)} of 100` : 'None'])
+      if (import.meta.env.PUBLIC_EDITION === 'full') {
+        const bg = (await D.buildingGreen()).data?.countries?.[p.ISO3_CODE]
+        stats.push(['Building energy code', bg ? D.BG_SHORT[D.bgStatus(bg)] : 'None'])
+      }
+      stats.push(['Business (B-READY, mean of pillars)', biz != null ? `${nf.format(biz)} of 100` : 'None'])
       const srcs = [...new Set([0, 1, 2, 3].map(i => val(i)).filter(Boolean).map(r => r!.src || 'World Bank'))]
       if (live) setPlace({ name: p.NAME_ENGL, iso3: p.ISO3_CODE, stats, year: val(1)?.year, srcs })
     })()
