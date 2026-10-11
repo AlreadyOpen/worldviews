@@ -15,7 +15,7 @@ export type Pick = { view: ViewId; title: string; rows: [string, string][]; href
 
 const STYLE = { light: 'https://tiles.openfreemap.org/styles/positron', dark: 'https://tiles.openfreemap.org/styles/dark' }
 // Attribution per world-buildings region source.
-const BLD_ATTR: Record<string, string> = { hk: 'Lands Department via CSDI (AlreadyOpen hk-buildings)' }
+const BLD_ATTR: Record<string, string> = { hk: 'Lands Department via CSDI (AlreadyOpen hk-buildings)', '3dbag': '© 3DBAG by tudelft3d and 3DGI (CC BY 4.0)' }
 const BLD_OVERTURE = 'Overture Maps (ODbL), © OpenStreetMap contributors via AlreadyOpen world-buildings'
 const H: any = ['coalesce', ['get', 'height'], 0]
 const ramp = (input: any, stops: number[], colors: string[]) => ['interpolate', ['linear'], input, ...stops.flatMap((s, i) => [s, colors[i]])]
@@ -378,7 +378,7 @@ export class World {
         m.addSource('bld-' + r.id, { type: 'vector', url: 'pmtiles://' + r.tiles, attribution: BLD_ATTR[r.source] || BLD_OVERTURE })
         for (const [pre, color] of [['b', N.bld], ['h', ['case', ['has', 'height'], ramp(['get', 'height'], HEIGHT_STOPS, V), N.nodata]]] as const) {
           const id = `${pre}-bld-${r.id}`, list = pre === 'b' ? LAYERS.base : LAYERS.height
-          m.addLayer({ id, type: 'fill-extrusion', source: 'bld-' + r.id, 'source-layer': f.data.layer, layout: { visibility: 'none' },
+          m.addLayer({ id, type: 'fill-extrusion', source: 'bld-' + r.id, 'source-layer': r.layer || f.data.layer, layout: { visibility: 'none' },
             paint: { 'fill-extrusion-color': color as any, 'fill-extrusion-height': OH, 'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0], 'fill-extrusion-opacity': 0.92 } }, 'countries-hit')
           if (!list.includes(id)) list.unshift(id)
         }
@@ -547,11 +547,11 @@ export class World {
     if (L) { const r = L.pick(p)
       return this.onPick?.({ view: L.view, title: r.title, rows: r.rows, href: r.href || L.href, source: `${L.name}. ${L.licence}`, links: r.href && r.href !== L.href ? [['Source', L.href]] : undefined }) }
     if (id.startsWith('h-bld-')) {
-      const r = this.regions.get(id.slice(6)), hk = r?.source === 'hk', m1 = (k: string, v: any, f = (x: any) => String(x)) => v != null && v !== '' ? [[k, f(v)]] as [string, string][] : []
+      const r = this.regions.get(id.slice(6)), hk = r?.source === 'hk', bag = r?.source === '3dbag', m1 = (k: string, v: any, f = (x: any) => String(x)) => v != null && v !== '' ? [[k, f(v)]] as [string, string][] : []
       return this.onPick?.({ view: 'height', title: p.name || p['names.primary'] || p.BuildingNameEN || 'Building',
-        source: hk ? 'Lands Department via CSDI (AlreadyOpen hk-buildings)' : 'Overture Maps via AlreadyOpen world-buildings',
-        href: `https://huggingface.co/datasets/alreadyopen/${hk ? 'hk' : 'world'}-buildings`,
-        rows: [['Height', p.height != null ? `${Math.round(p.height)} m` : 'Not in the data'], ...m1('Floors', p.num_floors ?? p.Storeys), ...m1('Starts at', p.min_height, x => `${Math.round(x)} m`),
+        source: hk ? 'Lands Department via CSDI (AlreadyOpen hk-buildings)' : bag ? '© 3DBAG by tudelft3d and 3DGI (CC BY 4.0)' : 'Overture Maps via AlreadyOpen world-buildings',
+        href: bag ? 'https://3dbag.nl' : `https://huggingface.co/datasets/alreadyopen/${hk ? 'hk' : 'world'}-buildings`,
+        rows: [['Height', p.height != null ? `${Math.round(p.height)} m` : 'Not in the data'], ...m1('Floors', p.num_floors ?? p.Storeys ?? p.b3_bouwlagen), ...m1('Starts at', p.min_height, x => `${Math.round(x)} m`),
           ...m1('Data source', p.source), ...m1('Check', p.check)] })
     }
     if (id === 'z-quake' || id === 'z-quake-label') return this.onPick?.({ view: 'hazards', title: p.title, source: 'USGS', href: p.url,

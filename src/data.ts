@@ -23,9 +23,16 @@ export const TRANSIT = 'https://huggingface.co/buckets/alreadyopen/hk-transit/re
 
 // Buildings: AlreadyOpen world-buildings, one PMTiles file per region (Overture Maps, and the official CSDI data for Hong Kong),
 // layer `buildings`, from z6 (tallest first) to about z15. The index lists the regions; nothing about them is hard-coded.
-export type Region = { id: string; source: string; bbox: number[]; rows: number; checked: number; tiles: string }
-export const buildingRegions = () => once('world-buildings', async () =>
-  (await json('https://huggingface.co/buckets/alreadyopen/world-buildings/resolve/index.json')) as { release: string; layer: string; regions: Region[] })
+export type Region = { id: string; source: string; bbox: number[]; rows: number; checked: number; tiles: string; layer?: string }
+// The Netherlands: 3DBAG (CC BY 4.0) drawn alongside Overture (Helen, 2026-10-11). Until world-buildings lists a 3DBAG region,
+// the 30 m+ 3DBAG tiles of world-skylines stand in (layer `skylines`); once the index has one, this fallback is not used.
+const NL_3DBAG: Region = { id: 'nl-3dbag', source: '3dbag', bbox: [3.3845, 50.7617, 7.0391, 53.4869], rows: 0, checked: 0,
+  tiles: 'https://huggingface.co/buckets/alreadyopen/world-skylines/resolve/nl.pmtiles', layer: 'skylines' }
+export const buildingRegions = () => once('world-buildings', async () => {
+  const idx = (await json('https://huggingface.co/buckets/alreadyopen/world-buildings/resolve/index.json')) as { release: string; layer: string; regions: Region[] }
+  if (!idx.regions.some(r => r.source === '3dbag')) idx.regions.push(NL_3DBAG)
+  return idx
+})
 
 // USGS: day feed for live and the day slider (T2), month feed for history (T3). Public domain.
 export const quakes = (span: 'day' | 'month') => once('usgs-' + span, () =>

@@ -50,6 +50,7 @@ export const SOURCES = {
   height: [
     { name: 'AlreadyOpen world-buildings', href: 'https://huggingface.co/datasets/alreadyopen/world-buildings', licence: 'Overture Maps ODbL, © OpenStreetMap contributors' },
     { name: 'AlreadyOpen hk-buildings', href: 'https://huggingface.co/datasets/alreadyopen/hk-buildings', licence: 'Lands Department via CSDI (Government of the HKSAR)' },
+    { name: '3DBAG (the Netherlands)', href: 'https://3dbag.nl', licence: '© 3DBAG by tudelft3d and 3DGI, CC BY 4.0' },
   ],
   hazards: [
     { name: 'USGS earthquakes, M2.5+', href: 'https://earthquake.usgs.gov/earthquakes/feed/', licence: 'Public domain' },
