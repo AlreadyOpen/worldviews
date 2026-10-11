@@ -16,6 +16,9 @@ export type Pick = { view: ViewId; title: string; rows: [string, string][]; href
 const STYLE = { light: 'https://tiles.openfreemap.org/styles/positron', dark: 'https://tiles.openfreemap.org/styles/dark' }
 // Attribution per world-buildings region source.
 const BLD_ATTR: Record<string, string> = { hk: 'Lands Department via CSDI (AlreadyOpen hk-buildings)', '3dbag': '© 3DBAG by tudelft3d and 3DGI (CC BY 4.0)' }
+import { HK_OVERTURE_IDS } from './hk-area'
+// Overture also carries 577 Hong Kong buildings and parts (OpenStreetMap); there the CSDI region draws instead (Helen 2026-10-11).
+const NOT_HK: any = ['!', ['in', ['get', 'id'], ['literal', HK_OVERTURE_IDS]]]
 const BLD_OVERTURE = 'Overture Maps (ODbL), © OpenStreetMap contributors via AlreadyOpen world-buildings'
 const H: any = ['coalesce', ['get', 'height'], 0]
 const ramp = (input: any, stops: number[], colors: string[]) => ['interpolate', ['linear'], input, ...stops.flatMap((s, i) => [s, colors[i]])]
@@ -57,6 +60,7 @@ export class World {
   busLines: any[] = []
   busStops: any[] = []
   private regions = new Map<string, D.Region>()   // world-buildings regions whose source this map has added
+  private hkCut = new Set<string>()                // building layers of Overture regions that reach Hong Kong
   private installed = false
   private peopleBy: Record<string, { v: number; year: string; src?: string }> = {}
   private peopleRamp: any = null
@@ -107,7 +111,7 @@ export class World {
     if (this.installed || gen !== this.gen) return   // a newer style (theme switch) took over while we waited
     this.installed = true
     const hid = { visibility: 'none' } as any, V = RAMPS.viridis[this.theme]
-    this.regions.clear()
+    this.regions.clear(); this.hkCut.clear()
     this.fireMode = ''; LAYERS.hazards = LAYERS.hazards.filter(id => !id.startsWith('f-'))   // a new style has none of them
     const empty: any = { type: 'FeatureCollection', features: [] }
     // Natural Earth 1:10m outlines as tiles (AlreadyOpen world-places): 1:50m sat km off at city zoom (Macau)
@@ -230,7 +234,10 @@ export class World {
   private filters() {
     const m = this.map, s = this.state, hs = s.sub.height || 'all', zs = s.sub.hazards || 'all', ts = s.sub.transit || 'all'
     const min = hs === 'super' ? 300 : hs === 'tall' ? 150 : 0
-    for (const id of LAYERS.height) if (m.getLayer(id)) m.setFilter(id, min ? ['>=', H, min] : null)
+    for (const id of LAYERS.height) if (m.getLayer(id)) {
+      const f = [...(min ? [['>=', H, min]] : []), ...(this.hkCut.has(id) ? [NOT_HK] : [])]
+      m.setFilter(id, f.length > 1 ? ['all', ...f] as any : f[0] ?? null)
+    }
     const cut = this.cutoff()
     m.setFilter('z-quake', zs === 'all' || zs === 'quakes' ? (cut ? ['<=', ['get', 'time'], cut] : null) : ['==', 1, 0])
     m.setFilter('z-quake-label', ['all', ['>=', ['get', 'mag'], 5], ...(zs === 'all' || zs === 'quakes' ? [] : [['==', 1, 0]]), ...(cut ? [['<=', ['get', 'time'], cut]] : [])] as any)
@@ -378,7 +385,9 @@ export class World {
         m.addSource('bld-' + r.id, { type: 'vector', url: 'pmtiles://' + r.tiles, attribution: BLD_ATTR[r.source] || BLD_OVERTURE })
         for (const [pre, color] of [['b', N.bld], ['h', ['case', ['has', 'height'], ramp(['get', 'height'], HEIGHT_STOPS, V), N.nodata]]] as const) {
           const id = `${pre}-bld-${r.id}`, list = pre === 'b' ? LAYERS.base : LAYERS.height
-          m.addLayer({ id, type: 'fill-extrusion', source: 'bld-' + r.id, 'source-layer': r.layer || f.data.layer, layout: { visibility: 'none' },
+          const cut = r.source !== 'hk' && r.source !== '3dbag' && x0 < 114.51 && x1 > 113.81 && y0 < 22.57 && y1 > 22.13
+          if (cut) this.hkCut.add(id)
+          m.addLayer({ id, type: 'fill-extrusion', source: 'bld-' + r.id, 'source-layer': r.layer || f.data.layer, layout: { visibility: 'none' }, ...(cut ? { filter: NOT_HK } : {}),
             paint: { 'fill-extrusion-color': color as any, 'fill-extrusion-height': OH, 'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0], 'fill-extrusion-opacity': 0.92 } }, 'countries-hit')
           if (!list.includes(id)) list.unshift(id)
         }
