@@ -387,7 +387,7 @@ export class World {
           const id = `${pre}-bld-${r.id}`, list = pre === 'b' ? LAYERS.base : LAYERS.height
           const cut = r.source !== 'hk' && r.source !== '3dbag' && x0 < 114.51 && x1 > 113.81 && y0 < 22.57 && y1 > 22.13
           if (cut) this.hkCut.add(id)
-          m.addLayer({ id, type: 'fill-extrusion', source: 'bld-' + r.id, 'source-layer': r.layer || f.data.layer, layout: { visibility: 'none' }, ...(cut ? { filter: NOT_HK } : {}),
+          m.addLayer({ id, type: 'fill-extrusion', source: 'bld-' + r.id, 'source-layer': f.data.layer, layout: { visibility: 'none' }, ...(cut ? { filter: NOT_HK } : {}),
             paint: { 'fill-extrusion-color': color as any, 'fill-extrusion-height': OH, 'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0], 'fill-extrusion-opacity': 0.92 } }, 'countries-hit')
           if (!list.includes(id)) list.unshift(id)
         }
