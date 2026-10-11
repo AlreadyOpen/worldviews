@@ -6,10 +6,11 @@ import * as Sat from './sats'
 import { MAP_ICONS, iconImage } from './icons'
 import { LOCAL, cellsFor, layerOwner, meets, type Bbox, type Local } from './local'
 import { HEIGHT_STOPS, MAG_STOPS, RAMPS, VIEWS, VIEW_IDS, type ViewId, HK, inHK } from './views'
+import { FIRE, FIRE_LINKS, FIRE_MINZOOM, SA_BOX, drawable, fireLayers, fireRows, type FireMode } from './fire'
 
 let protocol = false
 export type Theme = 'light' | 'dark'
-export type EngineState = { views: ViewId[]; base: boolean; sub: Partial<Record<ViewId, string>>; time: 't1' | 't2' | 't3'; hour: number; day: number }
+export type EngineState = { views: ViewId[]; base: boolean; sub: Partial<Record<ViewId, string>>; time: 't1' | 't2' | 't3'; hour: number; day: number; fire: FireMode }
 export type Pick = { view: ViewId; title: string; rows: [string, string][]; href?: string; source: string; links?: [string, string][] }
 
 const STYLE = { light: 'https://tiles.openfreemap.org/styles/positron', dark: 'https://tiles.openfreemap.org/styles/dark' }
@@ -48,7 +49,7 @@ const GDACS_CAT: Record<string, string> = { TC: 'storms', FL: 'floods', DR: 'flo
 export class World {
   map: maplibregl.Map
   theme: Theme
-  state: EngineState = { views: [], base: true, sub: {}, time: 't1', hour: 24, day: 30 }
+  state: EngineState = { views: [], base: true, sub: {}, time: 't1', hour: 24, day: 30, fire: 'off' }
   pending = new Set<Promise<any>>()
   onPick?: (p: Pick | null) => void
   onUpdate?: () => void
@@ -73,6 +74,8 @@ export class World {
   private localCells: Record<string, Map<string, any[]>> = {}
   private warned = new Set<string>()
   private bldLayer = 'buildings'
+  private fireMode = ''                          // the fire presentation whose sources are on the map ('' = none yet)
+  fireErr: Record<string, string> = {}
 
   constructor(el: HTMLElement, theme: Theme, camera: { center: [number, number]; zoom: number; pitch?: number; bearing?: number }) {
     if (!protocol) { maplibregl.setWorkerUrl('/maplibre/maplibre-gl-worker.mjs'); maplibregl.addProtocol('pmtiles', new Protocol().tile); protocol = true }
@@ -80,7 +83,10 @@ export class World {
     this.map = new maplibregl.Map({ container: el, style: STYLE[theme], ...camera, maxPitch: 80, attributionControl: { compact: true },
       canvasContextAttributes: { preserveDrawingBuffer: true } } as any)
     this.map.on('style.load', () => { this.installed = false; this.install(++this.gen).catch(e => console.error('worldviews install failed', e)) })
-    this.map.on('moveend', () => { this.loadBus(); this.loadBuildings(); this.loadLocal(); this.onUpdate?.() })
+    this.map.on('moveend', () => { this.loadBus(); this.loadBuildings(); this.loadLocal(); this.loadFire(); this.onUpdate?.() })
+    // A listener stops MapLibre's own console.error, so pass on every error that is not a fire source's (those show in the answer)
+    this.map.on('error', (e: any) => { const id = e.sourceId || e.source?.id
+      if (typeof id === 'string' && id.startsWith('fs-')) { this.fireErr[id.slice(3)] = String(e.error?.message || e.error || 'failed').replace(/https?:\/\/\S+/g, '').replace(/[:\s]+$/, '').trim(); this.onUpdate?.() } else console.error(e.error || e) })
     this.map.on('click', e => this.pick(e.point))
     // Start with the attribution folded (the i button opens it), so it does not run under the panels.
     this.map.once('load', () => this.map.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show'))
@@ -102,6 +108,7 @@ export class World {
     this.installed = true
     const hid = { visibility: 'none' } as any, V = RAMPS.viridis[this.theme]
     this.regions.clear()
+    this.fireMode = ''; LAYERS.hazards = LAYERS.hazards.filter(id => !id.startsWith('f-'))   // a new style has none of them
     const empty: any = { type: 'FeatureCollection', features: [] }
     // Natural Earth 1:10m outlines as tiles (AlreadyOpen world-places): 1:50m sat km off at city zoom (Macau)
     m.addSource('people', { type: 'vector', url: `pmtiles://${D.PLACES}/countries.pmtiles`,
@@ -215,6 +222,7 @@ export class World {
     if (s.views.includes('transit')) this.loadBus()
     this.loadBuildings()
     this.loadLocal()
+    this.loadFire()
     this.filters()
     this.onUpdate?.()
   }
@@ -234,6 +242,7 @@ export class World {
       const sub = s.sub[L.view] || 'all', on = s.views.includes(L.view) && (sub === 'all' || sub === L.cat)
       for (const id of LAYERS[L.view]) if (layerOwner(id) === L && m.getLayer(id)) m.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none')
     }
+    for (const id of LAYERS.hazards) if (id.startsWith('f-') && m.getLayer(id)) m.setLayoutProperty(id, 'visibility', this.fireWanted() !== 'off' ? 'visible' : 'none')
   }
 
   // T2 = a moment in the last 24 h (USGS day feed), T3 = a day in the last 30 (month feed). Both are real feed history.
@@ -385,6 +394,47 @@ export class World {
     }))
   }
 
+  // SA fire layers (fire.ts): the presentation the viewer chose, on while hazards shows all events or fire. Sources are added
+  // only once the view is near South Australia (plain and styled load whole files), and swapped when the presentation changes.
+  fireWanted(): FireMode {
+    const s = this.state, sub = s.sub.hazards || 'all'
+    return s.views.includes('hazards') && (sub === 'all' || sub === 'fire') ? s.fire : 'off'
+  }
+  private loadFire() {
+    const m = this.map
+    if (!this.installed) return
+    const want = this.fireWanted(), b = m.getBounds(), draw = !['off', 'link'].includes(want)
+    const near = m.getZoom() >= FIRE_MINZOOM && meets([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], SA_BOX)
+    const target = want === 'off' ? this.fireMode : draw && !near && this.fireMode !== want ? '' : want   // 'off' hides, keeps the sources
+    if (target === this.fireMode) return
+    for (const id of LAYERS.hazards.filter(x => x.startsWith('f-'))) if (m.getLayer(id)) m.removeLayer(id)
+    LAYERS.hazards = LAYERS.hazards.filter(x => !x.startsWith('f-'))
+    for (const L of FIRE) if (m.getSource('fs-' + L.id)) m.removeSource('fs-' + L.id)
+    this.fireMode = target; this.fireErr = {}
+    const mode = target as FireMode, tiled = mode === 'tiles' || mode === 'thinned'
+    for (const L of FIRE) if (target && drawable(L, mode)) {
+      const src = 'fs-' + L.id, attribution = `${L.owner} via AlreadyOpen sa-fire (${L.licence})`
+      m.addSource(src, tiled ? { type: 'vector', url: `pmtiles://${L.tiles}${mode === 'thinned' ? '-thinned' : ''}.pmtiles`, attribution } : { type: 'geojson', data: L.geojson!, attribution } as any)
+      for (const spec of fireLayers(L, mode === 'styled', this.theme === 'dark')) {
+        m.addLayer({ ...spec, source: src, ...(tiled ? { 'source-layer': L.id } : {}), layout: { ...(spec.layout || {}), visibility: 'none' } }, spec.type === 'fill' || spec.type === 'line' ? 'z-eonet' : undefined)
+        LAYERS.hazards.push(spec.id)
+      }
+      if (!tiled) this.track(new Promise<void>(res => {   // a whole GeoJSON file: ready() waits until it is parsed (or failed)
+        const done = () => { clearTimeout(t); m.off('sourcedata', f); m.off('error', f); res() }, t = setTimeout(done, 300e3)
+        const f = (e: any) => { try { if ((e.sourceId || e.source?.id) === src && (e.type === 'error' || m.isSourceLoaded(src))) done() } catch { done() } }
+        m.on('sourcedata', f); m.on('error', f)
+      }))
+    }
+    this.filters(); this.onUpdate?.()
+  }
+  // What the fire presentation has put on the map, for __state and the answer
+  fireState() {
+    const m = this.map, layers = LAYERS.hazards.filter(id => id.startsWith('f-') && m.getLayer(id) && m.getLayoutProperty(id, 'visibility') === 'visible')
+    return { wanted: this.fireWanted(), loaded: this.fireMode, errors: this.fireErr,
+      sources: FIRE.filter(L => m.getSource('fs-' + L.id)).map(L => { const sp: any = m.getSource('fs-' + L.id); return sp.url || L.geojson }),
+      rendered: Object.fromEntries(layers.map(id => [id, m.queryRenderedFeatures({ layers: [id] }).length])) }
+  }
+
   // Country layers: fetch (once per session, or once per grid cell in view) while their view is on and the view meets their area.
   // A failure is kept: the answer says "source unavailable", and the console gets one warning per source, not an error per move.
   private loadLocal() {
@@ -482,8 +532,16 @@ export class World {
     const layers = this.state.views.flatMap(v => LAYERS[v]).filter(id => this.map.getLayoutProperty(id, 'visibility') === 'visible')
     const fs = layers.length ? this.map.queryRenderedFeatures(pt, { layers }) : []
     const f = fs.find(x => x.properties?.iss) || fs[0]   // vehicles docked at the ISS share its point: the ISS wins
-    if (!f) return this.onPick?.(null)
+    if (!f) {
+      const ll = this.map.unproject(pt).toArray()
+      if (this.fireWanted() === 'link' && meets([ll[0], ll[1], ll[0], ll[1]], SA_BOX)) return this.onPick?.({ view: 'hazards', title: 'Fire information, South Australia',
+        rows: [['Shown as', 'Links only: no fire data is drawn here'], ['Fires now', 'See the CFS for current incidents and warnings']],
+        source: 'Department for Environment and Water and SA Country Fire Service, on Data.SA', href: 'https://www.cfs.sa.gov.au/', links: FIRE_LINKS })
+      return this.onPick?.(null)
+    }
     let p: any = f.properties; const id = f.layer.id
+    if (id.startsWith('f-')) { const F = FIRE.find(x => id.startsWith(`f-${x.id}-`))!
+      return this.onPick?.({ view: 'hazards', title: F.name, rows: fireRows(p), href: F.docs, source: `${F.owner} via AlreadyOpen sa-fire. ${F.licence}` }) }
     const fmt = (t: any) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     const L = layerOwner(id)
     if (L) { const r = L.pick(p)

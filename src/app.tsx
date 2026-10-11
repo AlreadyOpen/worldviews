@@ -16,6 +16,7 @@ import * as D from './data'
 import * as Sat from './sats'
 import { aemo, auState, NEM_REGION } from './local'
 import { HK, SOURCES, VIEWS, VIEW_IDS, type ViewId } from './views'
+import { FIRE_DEFAULT, FIRE_MODES, isFireMode, type FireMode } from './fire'
 
 // Every open design option is a URL parameter and a control (eyeball-all-options); the URL holds the whole state.
 const OPTIONS = {
@@ -25,11 +26,13 @@ const OPTIONS = {
   theme: { label: 'Theme', values: { system: 'Follow the system', light: 'Light', dark: 'Dark' } },
   names: { label: 'View names', values: { question: 'Questions', noun: 'Nouns' } },
 } as const
-type S = { switch: string; panel: string; time: string; theme: string; names: string; view: ViewId | ''; on: ViewId[]; sub: Partial<Record<ViewId, string>>; b: ViewId; hour: number; day: number }
-const DEFAULT: S = { switch: 'v3', panel: 'p2', time: 't1', theme: 'system', names: 'question', view: 'height', on: ['height'], sub: {}, b: 'hazards', hour: 24, day: 30 }
+type S = { switch: string; panel: string; time: string; theme: string; names: string; view: ViewId | ''; on: ViewId[]; sub: Partial<Record<ViewId, string>>; b: ViewId; hour: number; day: number; fire: FireMode }
+const DEFAULT: S = { switch: 'v3', panel: 'p2', time: 't1', theme: 'system', names: 'question', view: 'height', on: ['height'], sub: {}, b: 'hazards', hour: 24, day: 30, fire: FIRE_DEFAULT }
 const WORLD = { center: [96, 20] as [number, number], zoom: 1.85, pitch: 0, bearing: 0 }
 const isView = (v: any): v is ViewId => VIEW_IDS.includes(v)
 // Read once at load: the URL is rewritten from state right after, and `at` (camera) is not part of state.
+// at: 'hk', or 'lon,lat,zoom' for any place
+const camAt = (at: string | null) => { const n = (at || '').split(',').map(Number); return at === 'hk' ? HK : n.length === 3 && n.every(Number.isFinite) ? { center: [n[0], n[1]] as [number, number], zoom: n[2], pitch: 0, bearing: 0 } : WORLD }
 const AT = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('at') : null
 const INTRO = typeof location !== 'undefined' && !AT && !new URLSearchParams(location.search).has('view')
 
@@ -42,6 +45,7 @@ function parse(q: URLSearchParams, base: S = DEFAULT): S {
   for (const part of (q.get('sub') || '').split(',').filter(Boolean)) { const [v, id] = part.split(':'); if (isView(v)) s.sub[v] = id }
   if (q.has('hour')) s.hour = Math.max(0, Math.min(24, +q.get('hour')!))
   if (q.has('day')) s.day = Math.max(0, Math.min(30, +q.get('day')!))
+  if (isFireMode(q.get('fire'))) s.fire = q.get('fire') as FireMode
   return s
 }
 function serialise(s: S) {
@@ -53,12 +57,13 @@ function serialise(s: S) {
   if (sub) q.set('sub', sub)
   if (s.time === 't2') q.set('hour', String(s.hour))
   if (s.time === 't3') q.set('day', String(s.day))
+  if (s.fire !== FIRE_DEFAULT) q.set('fire', s.fire)
   return q.toString()
 }
 const name = (v: ViewId, s: S) => (s.names === 'noun' ? VIEWS[v].noun : VIEWS[v].question)
 const engineState = (s: S, side: 'a' | 'b') => ({
   views: side === 'b' ? [s.b] : s.switch === 'v2' ? s.on : s.view ? [s.view] : [],
-  base: !['v1', 'v2'].includes(s.switch), sub: s.sub, time: s.time as any, hour: s.hour, day: s.day,
+  base: !['v1', 'v2'].includes(s.switch), sub: s.sub, time: s.time as any, hour: s.hour, day: s.day, fire: s.fire,
 })
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 const systemDark = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
@@ -100,7 +105,7 @@ export function App() {
   useEffect(() => {
     if (!gl2 || !elA.current) return
     const at = AT
-    const cam = at === 'hk' ? HK : WORLD
+    const cam = camAt(at)
     const a = (wA.current = new World(elA.current, theme, cam))
     let t: any
     a.onUpdate = () => { clearTimeout(t); t = setTimeout(() => refreshRef.current(), 150) }
@@ -147,7 +152,7 @@ export function App() {
       await refreshRef.current()
       if (live && !flying) {
         const m = wA.current?.map
-        window.__state = { ...s, theme: s.theme, appliedTheme: theme, grid, camera: m && { center: m.getCenter().toArray(), zoom: +m.getZoom().toFixed(2) } }
+        window.__state = { ...s, theme: s.theme, appliedTheme: theme, grid, camera: m && { center: m.getCenter().toArray(), zoom: +m.getZoom().toFixed(2) }, fireApplied: wA.current?.fireState() }
         window.__ready = true
       }
     })()
@@ -158,7 +163,7 @@ export function App() {
       const q = new URLSearchParams(p)
       setGrid(q.get('grid') === '1')
       const m = wA.current?.map
-      if (m && q.get('at')) { m.stop(); setFlying(false); m.jumpTo(q.get('at') === 'hk' ? HK : WORLD) }
+      if (m && q.get('at')) { m.stop(); setFlying(false); m.jumpTo(camAt(q.get('at'))) }
       window.__ready = false
       setS(parse(q, DEFAULT))
       for (let i = 0; i < 600 && !window.__ready; i++) await new Promise(r => setTimeout(r, 100))
@@ -362,6 +367,14 @@ function AnswerPanel({ s, setS, view, a, all, pick, clearPick, jump, collapsed, 
           <span className="sr">Map</span>
           <select value={s.sub[view] || VIEWS[view].subs[0].id} onChange={e => setS(x => ({ ...x, sub: { ...x.sub, [view]: e.target.value } }))}>
             {VIEWS[view].subs.map(sb => <option key={sb.id} value={sb.id}>{sb.label}</option>)}
+          </select>
+        </label>
+      )}
+      {view === 'hazards' && ['all', 'fire'].includes(s.sub.hazards || 'all') && (
+        <label className="subpick">
+          <span style={{ fontSize: '0.8125rem', color: 'var(--ink-2)' }}>Fire layers, South Australia</span>
+          <select value={s.fire} onChange={e => setS(x => ({ ...x, fire: e.target.value as FireMode }))}>
+            {FIRE_MODES.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
           </select>
         </label>
       )}

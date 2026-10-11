@@ -5,6 +5,7 @@ import { AIRPORT_TYPES, ALT_STOPS, LAYERS, airportColors, type World } from './e
 import { ADELAIDE, HEIGHT_STOPS, HK, INDICATORS_NOTE, MAG_STOPS, RAMPS, VIEWS, inHK, type ViewId } from './views'
 import { AADT_STOPS, DENSITY_STOPS, LOCAL, cellsFor, firstXY, meets, type Bbox } from './local'
 import type { LegendSpec } from './legend'
+import { FIRE, FIRE_MINZOOM, FIRE_MODES, SA_BOX, drawable, fireLegend } from './fire'
 
 export type Answer = {
   status: 'loading' | 'ok' | 'empty' | 'error' | 'outside' | 'zoom'
@@ -46,6 +47,22 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
     if (n || L.summary) lines.push(L.summary ? L.summary(fs) : `${L.what[0].toUpperCase()}${L.what.slice(1)}: ${nf.format(n)} in view`)
     else none.push(L.what.replace(/ \(.*\)$/, ''))
     if (n && L.legend) items.push(...L.legend(w.theme === 'dark'))
+  }
+  // SA fire layers (fire.ts), in the presentation the viewer chose: credit and licence per layer drawn, or per linked source
+  const fm = w.fireWanted()
+  if (v === 'hazards' && fm !== 'off' && meets(box, SA_BOX)) {
+    const label = FIRE_MODES.find(([k]) => k === fm)![1].split(':')[0]
+    const on = fm === 'link' ? FIRE : FIRE.filter(L => drawable(L, fm))
+    credits.push(...on.map(L => ({ name: `${L.name}: ${L.owner}${fm === 'link' ? ', linked only' : ', via AlreadyOpen sa-fire'}`, href: L.docs, licence: L.licence })))
+    const held = FIRE.filter(L => L.hold && !drawable(L, fm)).map(L => L.name.toLowerCase())
+    if (fm === 'link') lines.push('Fire layers (South Australia): links only. Click on the map in South Australia for the sources')
+    else if (z < FIRE_MINZOOM) lines.push(`Fire layers (South Australia), ${label.toLowerCase()}: zoom in to load them`)
+    else {
+      const st = w.fireState(), n = Object.values(st.rendered).reduce((a, b) => a + b, 0)
+      lines.push(`Fire layers (South Australia), ${label.toLowerCase()}: ${nf.format(n)} shapes drawn${held.length ? `. Links only, licence not settled: ${held.join(', ')}` : ''}`)
+      items.push(...fireLegend(fm, w.theme === 'dark'))
+      errors.push(...Object.entries(w.fireErr).map(([k, e]) => `${FIRE.find(L => L.id === k)?.name || k}: source unavailable (${e})`))
+    }
   }
   if (!credits.length) return a
   const out: Answer = { ...a, credits, errors: [...(a.errors || []), ...errors] }
