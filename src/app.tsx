@@ -20,14 +20,17 @@ import { FIRE_DEFAULT, FIRE_MODES, isFireMode, type FireMode } from './fire'
 
 // Every open design option is a URL parameter and a control (eyeball-all-options); the URL holds the whole state.
 const OPTIONS = {
+  ui: { label: 'Layout', values: { catalog: 'Data catalog (questions and answers)', cs1: 'Simulator, Cities: Skylines 1 style', cs2: 'Simulator, Cities: Skylines II style' } },
+  feed: { label: 'News feed (Chirper-style)', values: { on: 'On', off: 'Off' } },
+  marks: { label: 'Markers at city zoom', values: { three: '3D objects (three.js)', shapes: '3D shapes (MapLibre extrusions)', '2d': '2D markers' } },
   switch: { label: 'How views switch', values: { v1: 'V1. One view at a time', v2: 'V2. Free layer toggles', v3: 'V3. Base city + one view', v4: 'V4. V3 + compare split', v5: 'V5. Topics with their own maps', v6: 'V6. All data maps grid' } },
   panel: { label: 'City panel', values: { p1: 'P1. None', p2: 'P2. City card', p3: 'P3. City card + a meter per view' } },
   time: { label: 'Time', values: { t1: 'T1. Live only', t2: 'T2. Live + a day slider', t3: 'T3. Live + history' } },
   theme: { label: 'Theme', values: { system: 'Follow the system', light: 'Light', dark: 'Dark' } },
   names: { label: 'View names', values: { question: 'Questions', noun: 'Nouns' } },
 } as const
-type S = { switch: string; panel: string; time: string; theme: string; names: string; view: ViewId | ''; on: ViewId[]; sub: Partial<Record<ViewId, string>>; b: ViewId; hour: number; day: number; fire: FireMode }
-const DEFAULT: S = { switch: 'v3', panel: 'p2', time: 't1', theme: 'system', names: 'question', view: 'height', on: ['height'], sub: {}, b: 'hazards', hour: 24, day: 30, fire: FIRE_DEFAULT }
+type S = { ui: string; feed: string; marks: string; switch: string; panel: string; time: string; theme: string; names: string; view: ViewId | ''; on: ViewId[]; sub: Partial<Record<ViewId, string>>; b: ViewId; hour: number; day: number; fire: FireMode }
+const DEFAULT: S = { ui: 'catalog', feed: 'on', marks: 'three', switch: 'v3', panel: 'p2', time: 't1', theme: 'system', names: 'question', view: 'height', on: ['height'], sub: {}, b: 'hazards', hour: 24, day: 30, fire: FIRE_DEFAULT }
 const WORLD = { center: [96, 20] as [number, number], zoom: 1.85, pitch: 0, bearing: 0 }
 const isView = (v: any): v is ViewId => VIEW_IDS.includes(v)
 // Read once at load: the URL is rewritten from state right after, and `at` (camera) is not part of state.
@@ -50,7 +53,7 @@ function parse(q: URLSearchParams, base: S = DEFAULT): S {
 }
 function serialise(s: S) {
   const q = new URLSearchParams()
-  for (const k of ['switch', 'panel', 'time', 'theme', 'names', 'view'] as const) q.set(k, s[k])
+  for (const k of ['ui', 'feed', 'marks', 'switch', 'panel', 'time', 'theme', 'names', 'view'] as const) q.set(k, s[k])
   if (s.switch === 'v2') q.set('on', s.on.join(','))
   if (s.switch === 'v4') q.set('b', s.b)
   const sub = Object.entries(s.sub).map(([v, id]) => `${v}:${id}`).join(',')
@@ -63,16 +66,17 @@ function serialise(s: S) {
 const name = (v: ViewId, s: S) => (s.names === 'noun' ? VIEWS[v].noun : VIEWS[v].question)
 const engineState = (s: S, side: 'a' | 'b') => ({
   views: side === 'b' ? [s.b] : s.switch === 'v2' ? s.on : s.view ? [s.view] : [],
-  base: !['v1', 'v2'].includes(s.switch), sub: s.sub, time: s.time as any, hour: s.hour, day: s.day, fire: s.fire,
+  base: !['v1', 'v2'].includes(s.switch), sub: s.sub, time: s.time as any, hour: s.hour, day: s.day, fire: s.fire, marks: s.marks as any,
 })
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 const systemDark = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
 
 declare global { interface Window { __ready: boolean; __state: any; __apply: (p: Record<string, string>) => Promise<any> } }
 
-export function App() {
+export function App({ sim = false }: { sim?: boolean }) {
+  const base: S = sim ? { ...DEFAULT, ui: 'cs1' } : DEFAULT
   // Region view, then city view: with no view asked for, the globe opens on live hazards and the flight lands on height.
-  const [s, setS] = useState<S>(() => { const q = new URLSearchParams(location.search), x = parse(q); return !AT && !q.has('view') ? { ...x, view: 'hazards', on: ['hazards'] } : x })
+  const [s, setS] = useState<S>(() => { const q = new URLSearchParams(location.search), x = parse(q, base); return !AT && !q.has('view') ? { ...x, view: 'hazards', on: ['hazards'] } : x })
   const [sysDark, setSysDark] = useState(systemDark)
   const theme: Theme = s.theme === 'system' ? (sysDark ? 'dark' : 'light') : (s.theme as Theme)
   const elA = useRef<HTMLDivElement>(null), elB = useRef<HTMLDivElement>(null)
@@ -92,7 +96,7 @@ export function App() {
   const refresh = useCallback(async () => {
     const a = wA.current
     if (!a) return
-    const ids: ViewId[] = s.panel === 'p3' ? VIEW_IDS : [...new Set([...(engineState(s, 'a').views as ViewId[]), 'height' as ViewId, 'transit' as ViewId])]
+    const ids: ViewId[] = s.panel === 'p3' ? VIEW_IDS : [...new Set([...(engineState(s, 'a').views as ViewId[]), 'height' as ViewId, 'transit' as ViewId, ...(s.ui !== 'catalog' ? ['hazards' as ViewId] : [])])]
     const out: Record<string, Answer> = {}
     await Promise.all(ids.map(async v => { out[v] = await answer(a, v) }))
     if (s.switch === 'v4' && wB.current) out['b:' + s.b] = await answer(wB.current, s.b)
@@ -165,7 +169,7 @@ export function App() {
       const m = wA.current?.map
       if (m && q.get('at')) { m.stop(); setFlying(false); m.jumpTo(camAt(q.get('at'))) }
       window.__ready = false
-      setS(parse(q, DEFAULT))
+      setS(parse(q, base))
       for (let i = 0; i < 600 && !window.__ready; i++) await new Promise(r => setTimeout(r, 100))
       return window.__state
     }
@@ -198,6 +202,7 @@ export function App() {
         {s.switch === 'v4' && <div className="map" ref={elB}><CompareChip s={s} setS={setS} /></div>}
       </div>
 
+      {s.ui === 'catalog' ? <>
       <TopBar s={s} setS={setS} theme={theme} onPlace={c => wA.current?.map.flyTo({ ...c, duration: reduced() ? 0 : 2500 })} />
       {/* One left column: the picker, then the city card, stacked; the column scrolls inside itself, never over the map's other panels */}
       <div className="leftcol">
@@ -207,6 +212,9 @@ export function App() {
 
       <AnswerPanel s={s} setS={setS} view={active} a={active ? ans[active] : undefined} all={ans} pick={pick} clearPick={() => setPick(null)} jump={jump}
         collapsed={collapsed} toggle={() => setCollapsed(c => !c)} card={s.panel !== 'p1' ? <CityCard s={s} ans={ans} choose={choose} inside /> : null} />
+
+      </> : <Sim s={s} setS={setS} theme={theme} view={active} ans={ans} pick={pick} clearPick={() => setPick(null)} choose={choose}
+        fly={c => wA.current?.map.flyTo({ ...c, duration: reduced() ? 0 : 2500 })} />}
 
       {flightShown && <div className="float fly" role="status">Flying to Hong Kong<button className="icon-btn" aria-label="Skip the flight" onClick={() => { wA.current?.map.stop(); wA.current?.map.jumpTo(HK) }}><iconify-icon icon="ph:x" /></button></div>}
       {grid && <AllMaps s={s} w={wA.current!} choose={v => { choose(v); setGrid(false) }} close={() => setGrid(false)} />}
@@ -400,6 +408,19 @@ function AnswerPanel({ s, setS, view, a, all, pick, clearPick, jump, collapsed, 
           <p><small>Right map: {name(s.b, s)}</small><b>{all['b:' + s.b]?.value ?? ''}</b>{all['b:' + s.b]?.counts || all['b:' + s.b]?.detail?.split('.')[0] || '...'}</p>
         </div>
       )}
+      <TimeBox s={s} setS={setS} a={a} archive={archive} />
+      {pick && <PickCard pick={pick} clear={clearPick} />}
+      <div className="meta">
+        {(SOURCES[view] as any[]).filter(src => { const sb = s.sub[view] || VIEWS[view].subs[0].id; return (!src.sub || src.sub === sb) && src.notSub !== sb }).map(src => <span key={src.name}><a href={src.href} target="_blank" rel="noreferrer">{src.name}</a>. {src.licence}</span>)}
+        {a?.credits?.map(src => <span key={src.name}><a href={src.href} target="_blank" rel="noreferrer">{src.name}</a>. {src.licence}</span>)}
+      </div>
+      {card}
+    </aside>
+  )
+}
+
+function TimeBox({ s, setS, a, archive }: { s: S; setS: (f: (x: S) => S) => void; a?: Answer; archive: boolean }) {
+  return (
       <div className="time">
         {s.time === 't1' || archive ? (
           <>
@@ -422,25 +443,177 @@ function AnswerPanel({ s, setS, view, a, all, pick, clearPick, jump, collapsed, 
           </>
         )}
       </div>
-      {pick && (
-        <section className="pick" aria-label="Selected">
-          <h3>{pick.title}<button className="icon-btn" style={{ width: 26, height: 26 }} aria-label="Clear selection" onClick={clearPick}><iconify-icon icon="ph:x" width="14" /></button></h3>
-          <dl>{pick.rows.map(([k, v]) => <div key={k} style={{ display: 'contents' }}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
-          {pick.links?.length ? <p className="meta">{pick.links.map(([k, u]) => <a key={k} href={u} target="_blank" rel="noreferrer" style={{ marginRight: 12 }}>{k}</a>)}</p> : null}
-          <p className="meta">Source: {pick.source}{pick.href && <> · <a href={pick.href} target="_blank" rel="noreferrer">open</a></>}</p>
-        </section>
-      )}
-      <div className="meta">
-        {(SOURCES[view] as any[]).filter(src => { const sb = s.sub[view] || VIEWS[view].subs[0].id; return (!src.sub || src.sub === sb) && src.notSub !== sb }).map(src => <span key={src.name}><a href={src.href} target="_blank" rel="noreferrer">{src.name}</a>. {src.licence}</span>)}
-        {a?.credits?.map(src => <span key={src.name}><a href={src.href} target="_blank" rel="noreferrer">{src.name}</a>. {src.licence}</span>)}
+  )
+}
+
+function PickCard({ pick, clear, cls = '' }: { pick: Pick; clear: () => void; cls?: string }) {
+  return (
+    <section className={`pick ${cls}`} aria-label="Selected">
+      <h3>{pick.title}<button className="icon-btn" style={{ width: 26, height: 26 }} aria-label="Clear selection" onClick={clear}><iconify-icon icon="ph:x" width="14" /></button></h3>
+      <dl>{pick.rows.map(([k, v]) => <div key={k} style={{ display: 'contents' }}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
+      {pick.links?.length ? <p className="meta">{pick.links.map(([k, u]) => <a key={k} href={u} target="_blank" rel="noreferrer" style={{ marginRight: 12 }}>{k}</a>)}</p> : null}
+      <p className="meta">Source: {pick.source}{pick.href && <> · <a href={pick.href} target="_blank" rel="noreferrer">open</a></>}</p>
+    </section>
+  )
+}
+
+// Simulator layouts (Cities: Skylines 1 and II as the reference): the map fills the screen; the city reports through meters,
+// a row of info-view tools, one compact panel for the active view, a query card and a news feed. Same data and engine as the catalog.
+const CITIES: [string, { center: [number, number]; zoom: number; pitch?: number; bearing?: number }][] = [
+  ['Hong Kong', HK], ['Adelaide', { center: [138.6, -34.925], zoom: 12 }], ['Melbourne', { center: [144.963, -37.814], zoom: 13.5, pitch: 55 }],
+  ['Taipei', { center: [121.5654, 25.033], zoom: 12.5 }], ['Rotterdam', { center: [4.48, 51.92], zoom: 13.5, pitch: 55 }],
+  ['New York', { center: [-73.99, 40.73], zoom: 13, pitch: 55 }], ['The world', WORLD]]
+
+function Sim({ s, setS, theme, view, ans, pick, clearPick, choose, fly }: {
+  s: S; setS: (f: (x: S) => S) => void; theme: Theme; view: ViewId | ''; ans: Partial<Record<string, Answer>>
+  pick: Pick | null; clearPick: () => void; choose: (v: ViewId) => void; fly: (c: { center: [number, number]; zoom: number }) => void
+}) {
+  const place = usePlace(s)
+  const stat = (k: string) => place?.stats.find(([n]) => n.startsWith(k))?.[1]
+  const val = (v: ViewId) => { const a = ans[v]; return a?.status === 'ok' ? (v === 'height' ? a.value : [a.value, a.counts?.replace(/ in view$/, '')].filter(Boolean).join(' ')) : a?.status === 'zoom' ? 'Zoom in' : a?.status === 'outside' || a?.status === 'empty' ? 'None here' : a?.status === 'error' ? 'Unavailable' : '…' }
+  const power = stat('Power price')
+  // earthquakes in view plus every country feed counted in view (incidents, roadworks, fires); zoomed out it is the world's quakes
+  const events = () => { const a = ans.hazards; if (!a || a.status === 'loading') return undefined; if (a.status === 'error') return 'Unavailable'
+    const q = a.counts?.includes('worldwide') ? 0 : +(a.value || '0').replace(/,/g, ''); return a.counts?.includes('worldwide') ? `${a.value} quakes worldwide` : `${(q + (a.inView || 0)).toLocaleString('en')}` }
+  const meters: [string, string, string | undefined, ViewId?][] = [
+    ['ph:users-three', 'Population', stat('Population'), 'people'],
+    ['ph:buildings', 'Tallest in view', val('height'), 'height'],
+    ['ph:warning-circle', 'Live events in view', events(), 'hazards'],
+    ['ph:train', 'Transit', val('transit'), 'transit'],
+    ['ph:airplane-takeoff', 'Nearest big airport', stat('Airports nearby'), 'airports'],
+    ...(power ? [['ph:lightning', 'Power now', power.split(',')[0]] as [string, string, string]] : []),
+  ]
+  const next = theme === 'dark' ? 'light' : 'dark'
+  return (
+    <div className={`sim ${s.ui}`}>
+      <div className="float cs-stats" role="region" aria-label="City">
+        <span className="cs-place"><iconify-icon icon="ph:map-pin" width="16" />{place === undefined ? '…' : place?.name || 'Open sea'}</span>
+        {meters.map(([icon, label, v, go]) => (
+          <button key={label} className="cs-meter" onClick={() => go && choose(go)} disabled={!go} title={label}>
+            <iconify-icon icon={icon} width="16" /><span className="k">{label}</span><b aria-label={`${label}: ${v ?? 'loading'}`}>{v ?? '…'}</b>
+          </button>
+        ))}
       </div>
-      {card}
+
+      <nav className="float cs-tools" aria-label="Info views">
+        {VIEW_IDS.map((v, i) => (
+          <button key={v} className="cs-tool" aria-pressed={view === v} aria-label={`${VIEWS[v].noun} (${i + 1})`} data-tip={VIEWS[v].noun}
+            onClick={() => view === v ? setS(x => ({ ...x, view: '', on: [] })) : choose(v)}>
+            <iconify-icon icon={VIEWS[v].icon} width="22" />
+          </button>
+        ))}
+      </nav>
+
+      <div className="float cs-clock">
+        <Clock />
+        <label className="cs-cities"><span className="sr">Go to</span>
+          <select value="" onChange={e => { const c = CITIES.find(([n]) => n === e.target.value); if (c) fly(c[1]) }}>
+            <option value="">Go to…</option>{CITIES.map(([n]) => <option key={n}>{n}</option>)}
+          </select>
+        </label>
+        <button className="icon-btn" aria-label={`Switch to ${next} theme`} onClick={() => setS(x => ({ ...x, theme: next }))}>
+          <iconify-icon icon={theme === 'dark' ? 'ph:sun' : 'ph:moon'} width="18" />
+        </button>
+        <Options s={s} setS={setS} />
+      </div>
+
+      {view && <InfoPanel s={s} setS={setS} view={view} a={ans[view]} close={() => setS(x => ({ ...x, view: '', on: [] }))} />}
+      {pick && <PickCard pick={pick} clear={clearPick} cls="float cs-pick" />}
+      {s.feed === 'on' && <Feed fly={fly} />}
+    </div>
+  )
+}
+
+function Clock() {
+  const [t, setT] = useState(() => new Date())
+  useEffect(() => { const i = setInterval(() => setT(new Date()), 15000); return () => clearInterval(i) }, [])
+  return <span className="cs-time"><span className="dot" aria-hidden="true" />Live <b>{t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</b></span>
+}
+
+// The active info view, compact: the number and the legend up front; the explanation and the sources one click away.
+function InfoPanel({ s, setS, view, a, close }: { s: S; setS: (f: (x: S) => S) => void; view: ViewId; a?: Answer; close: () => void }) {
+  const srcs = [...(SOURCES[view] as any[]).filter(src => { const sb = s.sub[view] || VIEWS[view].subs[0].id; return (!src.sub || src.sub === sb) && src.notSub !== sb }), ...(a?.credits || [])]
+  return (
+    <section className="float cs-info" aria-label={VIEWS[view].noun}>
+      <h2><iconify-icon icon={VIEWS[view].icon} width="18" />{VIEWS[view].noun}
+        <button className="icon-btn" aria-label="Close this view" onClick={close}><iconify-icon icon="ph:x" width="14" /></button></h2>
+      {VIEWS[view].subs.length > 1 && (
+        <label className="subpick"><span className="sr">Map</span>
+          <select value={s.sub[view] || VIEWS[view].subs[0].id} onChange={e => setS(x => ({ ...x, sub: { ...x.sub, [view]: e.target.value } }))}>
+            {VIEWS[view].subs.map(sb => <option key={sb.id} value={sb.id}>{sb.label}</option>)}
+          </select>
+        </label>
+      )}
+      {view === 'hazards' && ['all', 'fire'].includes(s.sub.hazards || 'all') && (
+        <label className="subpick"><span className="sr">Fire layers, South Australia</span>
+          <select value={s.fire} onChange={e => setS(x => ({ ...x, fire: e.target.value as FireMode }))}>
+            {FIRE_MODES.map(([k, label]) => <option key={k} value={k}>Fire: {label}</option>)}
+          </select>
+        </label>
+      )}
+      <div aria-live="polite">
+        {!a || a.status === 'loading' ? <div className="sk-line" aria-hidden="true" />
+          : a.status === 'error' ? <p className="note warn">Unavailable now. Try again in a minute.</p>
+          : a.value != null ? <p className="headline"><span className="value">{a.value}</span><span className="counts">{a.counts}</span></p>
+          : <p className="note">{a.detail?.split('. ')[0]}</p>}
+      </div>
+      <Legend spec={a?.legend} />
+      <details className="cs-more">
+        <summary><iconify-icon icon="ph:info" width="14" />About this view and its sources</summary>
+        {a?.detail && <p className="detail">{a.detail}</p>}
+        {a?.errors?.length ? <p className="note warn">Partly loaded. {a.errors.join('. ')}.</p> : null}
+        <p className="meta">{a?.updated ? `Updated ${a.updated}. ` : ''}{srcs.map(src => <span key={src.name}><a href={src.href} target="_blank" rel="noreferrer">{src.name}</a>. {src.licence} </span>)}</p>
+      </details>
+    </section>
+  )
+}
+
+// Chirper-style feed: the newest real events (USGS earthquakes, GDACS alerts, NASA EONET), one bubble; open it for the list.
+function Feed({ fly }: { fly: (c: { center: [number, number]; zoom: number }) => void }) {
+  type Item = { id: string; text: string; t: number; c: [number, number]; src: string }
+  const [items, setItems] = useState<Item[]>([])
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    let live = true
+    Promise.all([D.quakes('day'), D.gdacs(), D.eonet()]).then(([q, g, e]) => {
+      const out: Item[] = []
+      for (const f of q.data?.features || []) if (f.properties.mag >= 4.5) out.push({ id: f.id, text: `M${f.properties.mag.toFixed(1)} earthquake, ${f.properties.place}`, t: f.properties.time, c: f.geometry.coordinates.slice(0, 2), src: 'USGS' })
+      for (const f of (g.data as any)?.features || []) out.push({ id: 'g' + f.properties.eventid, text: `${f.properties.alertlevel} alert: ${f.properties.name || f.properties.eventname}`, t: Date.parse(f.properties.fromdate), c: f.geometry.coordinates, src: 'GDACS' })
+      for (const f of (e.data as any)?.features || []) out.push({ id: 'e' + f.properties.id, text: f.properties.title, t: Date.parse(f.properties.date), c: f.geometry.coordinates, src: 'NASA EONET' })
+      if (live) setItems(out.filter(i => Number.isFinite(i.t)).sort((a, b) => b.t - a.t).slice(0, 12))
+    }).catch(err => console.error('feed failed', err))
+    return () => { live = false }
+  }, [])
+  const ago = (t: number) => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago` }
+  if (!items.length) return null
+  const go = (i: Item) => fly({ center: i.c, zoom: 7 })
+  return (
+    <aside className={`float cs-feed${open ? ' open' : ''}`} aria-label="News feed">
+      <button className="cs-feed-head" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        <iconify-icon icon="ph:chat-circle-dots" width="18" /><span className="cs-feed-text">{items[0].text}</span><small>{ago(items[0].t)}</small>
+      </button>
+      {open && <ul>{items.map(i => <li key={i.id}><button onClick={() => go(i)}><span>{i.text}</span><small>{i.src}, {ago(i.t)}</small></button></li>)}</ul>}
     </aside>
   )
 }
 
-function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string, Answer>>; choose: (v: ViewId) => void; inside?: boolean }) {
-  const [place, setPlace] = useState<{ name: string; iso3: string; stats: [string, string][]; year?: string; srcs: string[] } | null>(null)
+// The place under the map centre; over water (a harbour, a bay), the place most of the view's land belongs to, sampled on a 5x5 grid over the screen (a tilted view's bounds reach past the horizon).
+async function landAt(fc: any, center: number[]) {
+  const hit = await D.placeAt(fc, center)
+  const m = (window as any).map
+  if (hit || !m) return hit
+  const c = m.getCanvas(), w = c.clientWidth, h = c.clientHeight, n: Record<string, [number, any]> = {}
+  for (let i = 1; i < 6; i++) for (let j = 1; j < 6; j++) {
+    const q = await D.placeAt(fc, m.unproject([w * i / 6, h * j / 6]).toArray())
+    if (q) n[q.ISO3_CODE] = [(n[q.ISO3_CODE]?.[0] || 0) + 1, q]
+  }
+  return Object.values(n).sort((x, y) => y[0] - x[0])[0]?.[1] ?? null
+}
+
+type Place = { name: string; iso3: string; stats: [string, string][]; year?: string; srcs: string[] }
+// The country under the map centre and its figures (World Bank, airports, satellites, RISE, B-READY, AEMO in Australia)
+function usePlace(s: S) {
+  const [place, setPlace] = useState<Place | null | undefined>(undefined)
   const [center, setCenter] = useState<number[]>()
   useEffect(() => {
     const m = (window as any).map
@@ -454,7 +627,7 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
     let live = true
     ;(async () => {
       const c = await D.countries()
-      const p = center[2] ? { NAME_ENGL: 'The world', ISO3_CODE: 'WLD' } : c.data && await D.placeAt(c.data, center)
+      const p = center[2] ? { NAME_ENGL: 'The world', ISO3_CODE: 'WLD' } : c.data && await landAt(c.data, center)
       if (!p) return live && setPlace(null)
       const inds = await Promise.all((Object.keys(D.INDICATORS) as D.Indicator[]).map(k => D.worldBank(k)))
       const nf = new Intl.NumberFormat('en', { maximumFractionDigits: 1 }), big = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
@@ -492,10 +665,15 @@ function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string
     })()
     return () => { live = false }
   }, [center?.join()])
+  return place
+}
+
+function CityCard({ s, ans, choose, inside }: { s: S; ans: Partial<Record<string, Answer>>; choose: (v: ViewId) => void; inside?: boolean }) {
+  const place = usePlace(s)
   const h = ans.height, t = ans.transit
   // Collapsed to its header by default on short screens, so the picker above it keeps its room (the column scrolls as well)
   const [open, setOpen] = useState(() => typeof innerHeight === 'undefined' || innerHeight >= 760)
-  const title = <h2>{place?.name || 'Open sea'}</h2>
+  const title = <h2>{place === undefined ? '…' : place?.name || 'Open sea'}</h2>
   const body = (
     <>
       <p className="sub">{place ? place.iso3 === 'WLD' ? 'World Bank, latest year of each figure, all countries' : place.srcs.length ? `${place.srcs.join('; ')}, latest of each figure; None = not published` : 'No published figures for this place' : 'Move the map onto land for its numbers'}</p>

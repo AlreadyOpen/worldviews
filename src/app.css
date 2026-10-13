@@ -202,3 +202,73 @@ button, input, select { font: inherit; color: inherit }
 .also p { margin: 0; font-size: 0.875rem }
 .also b { font-variant-numeric: tabular-nums; font-size: 1.125rem; margin-right: 6px }
 .also small { display: block; color: var(--ink-2); font-size: 0.75rem }
+
+/* Simulator layouts (ui=cs1 / cs2): the map is the page; small, dense, game-like controls float on it. */
+.sim { display: contents }
+.cs-stats { display: flex; align-items: stretch; gap: 2px; padding: 4px; overflow-x: auto; scrollbar-width: none }
+.cs-place { display: flex; align-items: center; gap: 6px; padding: 0 var(--s3); font-weight: 650; white-space: nowrap; border-right: 1px solid var(--line) }
+.cs-meter { flex: none; display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 6px; align-items: center; padding: 4px 10px;
+  border: 0; border-radius: 7px; background: none; text-align: left; white-space: nowrap; cursor: pointer }
+.cs-meter:hover:not(:disabled) { background: var(--surface-2) }
+.cs-meter:disabled { cursor: default }
+.cs-meter iconify-icon { grid-row: 1 / 3; color: var(--ink-2) }
+.cs-meter .k { font-size: 0.6875rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em }
+.cs-meter b { font-size: 0.9375rem; font-variant-numeric: tabular-nums; font-weight: 650; max-width: 16rem; overflow: hidden; text-overflow: ellipsis }
+.cs-tools { display: flex; gap: 4px; padding: 6px }
+.cs-tool { position: relative; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); transition: transform 120ms var(--ease), background 120ms }
+.cs-tool:hover { transform: translateY(-2px) }
+.cs-tool[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent) }
+.cs-tool::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); pointer-events: none;
+  padding: 3px 8px; border-radius: 6px; background: var(--ink); color: var(--bg); font-size: 0.75rem; white-space: nowrap; opacity: 0; transition: opacity 120ms }
+.cs-tool:hover::after, .cs-tool:focus-visible::after { opacity: 1 }
+.cs-clock { display: flex; align-items: center; gap: var(--s2); padding: 4px 4px 4px var(--s3) }
+.cs-time { display: flex; align-items: center; gap: 6px; font-size: 0.8125rem; color: var(--ink-2); white-space: nowrap }
+.cs-time b { color: var(--ink); font-size: 1rem; font-variant-numeric: tabular-nums }
+.cs-time .dot { width: 8px; height: 8px; border-radius: 50%; background: oklch(0.65 0.2 145); box-shadow: 0 0 0 3px oklch(0.65 0.2 145 / 0.25) }
+.cs-cities select { border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); padding: 4px 6px; font-size: 0.8125rem }
+.cs-info { width: min(20rem, calc(100vw - 32px)); padding: var(--s3) var(--s4); max-height: calc(100vh - 180px); overflow: auto }
+.cs-info h2 { margin: 0 0 var(--s2); font-size: 1rem; display: flex; align-items: center; gap: 8px }
+.cs-info h2 .icon-btn { margin-left: auto; width: 28px; height: 28px }
+.cs-info .headline { margin: var(--s2) 0 }
+.cs-more { margin-top: var(--s3); font-size: 0.8125rem }
+.cs-more summary { cursor: pointer; color: var(--ink-2); display: flex; align-items: center; gap: 6px; list-style: none }
+.cs-more summary::-webkit-details-marker { display: none }
+.cs-pick { width: min(20rem, calc(100vw - 32px)); padding: var(--s3) var(--s4); margin: 0; border-top: 1px solid var(--line); max-height: 50vh; overflow: auto }
+.cs-feed { top: var(--s3); left: 50%; transform: translateX(-50%); width: min(30rem, calc(100vw - 32px)); overflow: hidden }
+.cs-feed-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 12px; border: 0; background: none; cursor: pointer; text-align: left }
+.cs-feed-head iconify-icon { color: var(--accent); flex: none }
+.cs-feed-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem }
+.cs-feed small, .cs-feed li small { color: var(--ink-2); font-size: 0.75rem; white-space: nowrap }
+.cs-feed ul { list-style: none; margin: 0; padding: 0 0 6px; border-top: 1px solid var(--line); max-height: 45vh; overflow: auto }
+.cs-feed li button { display: grid; width: 100%; padding: 6px 12px; border: 0; background: none; text-align: left; cursor: pointer; font-size: 0.875rem }
+.cs-feed li button:hover { background: var(--surface-2) }
+
+/* CS1: one band along the bottom, as in the game: the info-view tools bottom-left, the city's numbers in the middle,
+   the clock bottom-right; the active view's panel top-left; the query card top-right */
+.cs1 .cs-tools { left: var(--s3); bottom: var(--s3); gap: 3px; padding: 5px }
+.cs1 .cs-tool { width: 40px; height: 40px }
+.cs1 .cs-stats { left: 418px; right: 372px; bottom: var(--s3); justify-content: safe center }
+.cs1 .cs-clock { right: var(--s3); bottom: var(--s3) }
+.cs1 .cs-info { left: var(--s3); top: var(--s3) }
+.cs1 .cs-pick { right: var(--s3); top: var(--s3) }
+.app:has(.cs1) .maplibregl-ctrl-bottom-right, .app:has(.cs1) .maplibregl-ctrl-bottom-left { bottom: 68px }
+
+/* CS2: city meters across the top-left, clock top-right, the info-view tools as a column on the left, the panel beside it */
+.cs2 .cs-stats { left: var(--s3); top: var(--s3); max-width: calc(100vw - 32px - 420px) }
+.cs2 .cs-clock { right: var(--s3); top: var(--s3) }
+.cs2 .cs-tools { left: var(--s3); top: 50%; transform: translateY(-50%); flex-direction: column }
+.cs2 .cs-tool::after { bottom: auto; left: calc(100% + 8px); top: 50%; transform: translateY(-50%) }
+.cs2 .cs-info { left: 76px; top: 84px }
+.cs2 .cs-pick { right: var(--s3); bottom: 40px }
+.cs2 .cs-feed { top: auto; bottom: var(--s3) }
+
+@media (max-width: 900px) {
+  .cs1 .cs-stats, .cs2 .cs-stats { left: var(--s4); right: var(--s4); top: var(--s3); bottom: auto; max-width: none }
+  .cs1 .cs-tools, .cs2 .cs-tools { left: var(--s4); right: var(--s4); top: auto; bottom: var(--s3); transform: none; flex-direction: row; overflow-x: auto }
+  .cs1 .cs-clock, .cs2 .cs-clock { right: var(--s4); top: 72px; bottom: auto }
+  .cs1 .cs-info, .cs2 .cs-info { left: var(--s4); top: auto; bottom: 76px; max-height: 40vh }
+  .cs1 .cs-pick, .cs2 .cs-pick { right: var(--s4); left: var(--s4); top: auto; bottom: 76px; width: auto }
+  .cs-feed { display: none }
+  .cs-tool::after { display: none }
+}

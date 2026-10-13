@@ -6,11 +6,12 @@ import * as Sat from './sats'
 import { MAP_ICONS, iconImage } from './icons'
 import { LOCAL, cellsFor, layerOwner, meets, type Bbox, type Local } from './local'
 import { HEIGHT_STOPS, MAG_STOPS, RAMPS, VIEWS, VIEW_IDS, type ViewId, HK, inHK } from './views'
+import { Marks, type MarksMode } from './marks3d'
 import { FIRE, FIRE_LINKS, FIRE_MINZOOM, SA_BOX, drawable, fireLayers, fireRows, type FireMode } from './fire'
 
 let protocol = false
 export type Theme = 'light' | 'dark'
-export type EngineState = { views: ViewId[]; base: boolean; sub: Partial<Record<ViewId, string>>; time: 't1' | 't2' | 't3'; hour: number; day: number; fire: FireMode }
+export type EngineState = { views: ViewId[]; base: boolean; sub: Partial<Record<ViewId, string>>; time: 't1' | 't2' | 't3'; hour: number; day: number; fire: FireMode; marks?: MarksMode }
 export type Pick = { view: ViewId; title: string; rows: [string, string][]; href?: string; source: string; links?: [string, string][] }
 
 const STYLE = { light: 'https://tiles.openfreemap.org/styles/positron', dark: 'https://tiles.openfreemap.org/styles/dark' }
@@ -55,6 +56,7 @@ export class World {
   state: EngineState = { views: [], base: true, sub: {}, time: 't1', hour: 24, day: 30, fire: 'off' }
   pending = new Set<Promise<any>>()
   onPick?: (p: Pick | null) => void
+  marks: Marks
   onUpdate?: () => void
   busLoaded = new Set<string>()
   busLines: any[] = []
@@ -91,7 +93,8 @@ export class World {
     // A listener stops MapLibre's own console.error, so pass on every error that is not a fire source's (those show in the answer)
     this.map.on('error', (e: any) => { const id = e.sourceId || e.source?.id
       if (typeof id === 'string' && id.startsWith('fs-')) { this.fireErr[id.slice(3)] = String(e.error?.message || e.error || 'failed').replace(/https?:\/\/\S+/g, '').replace(/[:\s]+$/, '').trim(); this.onUpdate?.() } else console.error(e.error || e) })
-    this.map.on('click', e => this.pick(e.point))
+    this.map.on('click', e => this.pick(this.marks.hit(e.point) ?? e.point))   // a 3D object anywhere up its height picks its marker
+    this.marks = new Marks(this.map, () => this.state.views.flatMap(v => LAYERS[v]))
     // Start with the attribution folded (the i button opens it), so it does not run under the panels.
     this.map.once('load', () => this.map.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show'))
   }
@@ -122,6 +125,8 @@ export class World {
       if (!m.getSource('people')) return undefined
       // wait for this view's tiles; 'idle' never fires again if the map is already idle, so cap the wait
       if (!m.areTilesLoaded()) await Promise.race([m.once('idle'), new Promise(r => setTimeout(r, 4000))])
+      // tiles still loading is not "sea": let placeAt fall back to the 1:50m polygons (this was the stuck "Open sea" card)
+      if (!m.isSourceLoaded('people')) return undefined
       const f = m.queryRenderedFeatures(m.project([x, y]), { layers: ['countries-hit'] })[0]
       return f ? { NAME_ENGL: f.properties.NAME, ISO3_CODE: D.isoOf(f.properties) } : null
     })
@@ -228,6 +233,7 @@ export class World {
     this.loadLocal()
     this.loadFire()
     this.filters()
+    this.marks.setMode(s.marks || '2d')
     this.onUpdate?.()
   }
 
@@ -239,9 +245,9 @@ export class World {
       m.setFilter(id, f.length > 1 ? ['all', ...f] as any : f[0] ?? null)
     }
     const cut = this.cutoff()
-    m.setFilter('z-quake', zs === 'all' || zs === 'quakes' ? (cut ? ['<=', ['get', 'time'], cut] : null) : ['==', 1, 0])
-    m.setFilter('z-quake-label', ['all', ['>=', ['get', 'mag'], 5], ...(zs === 'all' || zs === 'quakes' ? [] : [['==', 1, 0]]), ...(cut ? [['<=', ['get', 'time'], cut]] : [])] as any)
-    for (const id of ['z-gdacs', 'z-eonet']) m.setFilter(id, zs === 'all' ? null : zs === 'quakes' ? ['==', 1, 0] : ['==', ['get', 'cat'], zs])
+    m.setFilter('z-quake', zs === 'all' || zs === 'quakes' ? (cut ? ['<=', ['get', 'time'], cut] : null) : ['has', '__none__'])
+    m.setFilter('z-quake-label', ['all', ['>=', ['get', 'mag'], 5], ...(zs === 'all' || zs === 'quakes' ? [] : [['has', '__none__']]), ...(cut ? [['<=', ['get', 'time'], cut]] : [])] as any)
+    for (const id of ['z-gdacs', 'z-eonet']) m.setFilter(id, zs === 'all' ? null : zs === 'quakes' ? ['has', '__none__'] : ['==', ['get', 'cat'], zs])
     m.setLayoutProperty('t-bus', 'visibility', s.views.includes('transit') && ts !== 'rail' ? 'visible' : 'none')
     for (const id of ['t-mtr', 't-mtr-st']) m.setLayoutProperty(id, 'visibility', s.views.includes('transit') && ts !== 'bus' ? 'visible' : 'none')
     // country layers that belong to one sub-map (hazards: quakes, fire, storms, roads; traffic: volume, crashes)

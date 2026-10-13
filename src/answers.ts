@@ -14,6 +14,7 @@ export type Answer = {
   jump?: { label: string; center: [number, number]; zoom: number }
   legend?: LegendSpec
   credits?: { name: string; href: string; licence: string }[]   // country sources that are in view
+  inView?: number   // features of the country layers counted in view (the simulator's meters add them to the headline)
 }
 
 const nf = new Intl.NumberFormat('en', { maximumFractionDigits: 1 })
@@ -34,6 +35,7 @@ const km = (a: number[], b: number[]) => {
 // source that failed says so.
 export async function answer(w: World, v: ViewId): Promise<Answer> {
   const a = await base(w, v), m = w.map, b = m.getBounds(), box: Bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], z = m.getZoom()
+  let inView = 0
   const lines: string[] = [], none: string[] = [], errors: string[] = [], items: any[] = [], credits: Answer['credits'] = []
   for (const L of LOCAL) {
     const sub = w.state.sub[v] || 'all'
@@ -44,6 +46,7 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
     const fs = w.localFeats[L.id]
     if (!fs) continue
     const n = fs.filter(f => { const p = firstXY(f.geometry); return p && b.contains(p as any) }).length
+    inView += n
     if (n || L.summary) lines.push(L.summary ? L.summary(fs) : `${L.what[0].toUpperCase()}${L.what.slice(1)}: ${nf.format(n)} in view`)
     else none.push(L.what.replace(/ \(.*\)$/, ''))
     if (n && L.legend) items.push(...L.legend(w.theme === 'dark'))
@@ -65,7 +68,7 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
     }
   }
   if (!credits.length) return a
-  const out: Answer = { ...a, credits, errors: [...(a.errors || []), ...errors] }
+  const out: Answer = { ...a, credits, inView, errors: [...(a.errors || []), ...errors] }
   if (none.length) lines.push(`None in view: ${none.join('; ')}`)
   if (lines.length) {
     out.detail = [a.detail, lines.join('. ') + '.'].filter(Boolean).join(' ')

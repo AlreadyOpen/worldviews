@@ -18,9 +18,15 @@ import briefcase from '@iconify-icons/ph/briefcase'
 import leaf from '@iconify-icons/ph/leaf'
 import caretDown from '@iconify-icons/ph/caret-down'
 import car from '@iconify-icons/ph/car'
+import lightning from '@iconify-icons/ph/lightning'
+import clock from '@iconify-icons/ph/clock'
+import chat from '@iconify-icons/ph/chat-circle-dots'
+import pin from '@iconify-icons/ph/map-pin'
+import info from '@iconify-icons/ph/info'
 
 Object.entries({ buildings, 'warning-circle': warning, train, 'users-three': users, 'squares-four': squares, x, 'sliders-horizontal': sliders,
-  'arrow-right': arrow, sun, moon, desktop, 'magnifying-glass': search, 'globe-hemisphere-east': globe, 'check-bold': check, briefcase, leaf, 'caret-down': caretDown, car }).forEach(([n, d]) => addIcon('ph:' + n, d))
+  'arrow-right': arrow, sun, moon, desktop, 'magnifying-glass': search, 'globe-hemisphere-east': globe, 'check-bold': check, briefcase, leaf, 'caret-down': caretDown, car,
+  lightning, clock, 'chat-circle-dots': chat, 'map-pin': pin, info }).forEach(([n, d]) => addIcon('ph:' + n, d))
 addIcon('tabler:satellite', satellite)
 addIcon('ph:airplane-takeoff', takeoffLine)
 
