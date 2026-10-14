@@ -660,7 +660,9 @@ function Drive({ map }: { map: () => maplibregl.Map | undefined }) {
   const go = (kind: Vehicle) => { const m = map(); if (!m) return
     if (m.getZoom() < 15) { setMsg('Zoom in to a street first (or pick a city), then drive.'); return }
     const dr = new Driver(m, kind); let n = 0; dr.onTick = () => { if (++n % 6 === 0) tick(n) }
-    if (dr.start()) { setD(dr); setMsg('') } else setMsg(dr.stuck) }
+    // In Hong Kong TD's road tiles start loading on this press: wait for them (up to about 6 s) instead of asking again
+    const tryStart = (left: number) => { if (dr.start()) { setD(dr); setMsg('') } else if (dr.hk && left) { setMsg('Loading TD\'s road network…'); m.once('idle', () => setTimeout(() => tryStart(left - 1), 300)) } else setMsg(dr.stuck) }
+    tryStart(5) }
   useEffect(() => () => d?.stop(), [d])
   const hold = (k: 'up' | 'down' | 'left' | 'right') => ({ onPointerDown: () => d?.press(k, true), onPointerUp: () => d?.press(k, false), onPointerLeave: () => d?.press(k, false) })
   if (!d) return (
