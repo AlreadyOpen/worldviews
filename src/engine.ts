@@ -18,7 +18,7 @@ const STYLE = { light: 'https://tiles.openfreemap.org/styles/positron', dark: 'h
 // Attribution per world-buildings region source.
 const BLD_ATTR: Record<string, string> = { hk: 'Lands Department via CSDI (AlreadyOpen hk-buildings)', '3dbag': '© 3DBAG by tudelft3d and 3DGI (CC BY 4.0)' }
 import { HK_OVERTURE_IDS } from './hk-area'
-import { HKR_HL, HKR_RULES, HKR_SRC, HKR_TILES, hkAlertRoadLayer, hkRoadLayers, hkRoadPick } from './hk-roads'
+import { HKA_SRC, HKA_TILES, HKR_HL, HKR_RULES, HKR_SRC, HKR_TILES, hkAlertRoadLayer, hkRoadLayers, hkRoadPick } from './hk-roads'
 import { HKR_LIVE, hkLiveLayer, hkLiveStyle, hkSpeeds } from './hk-live'
 import { CHARACTER_COLOR, KINDS, PROMOTE, analyse, cellAt, generate, ownKind, type Analysis } from './district'
 import { hkTraffic, type HkMsg } from './local-hk'
@@ -234,6 +234,7 @@ export class World {
     }
     // Hong Kong road rules (TD Road Network via hk-roads) for the traffic view, and the alerts' whole-road highlight
     m.addSource(HKR_SRC, { type: 'vector', url: HKR_TILES, attribution: 'Transport Department, Road Network (DATA.GOV.HK)' } as any)
+    m.addSource(HKA_SRC, { type: 'vector', url: HKA_TILES, attribution: 'Transport Department, Traffic Aids Drawings (DATA.GOV.HK)' } as any)
     // TD's centrelines for driving in Hong Kong (drive.ts): invisible, switched on only while driving there
     m.addLayer({ id: 'v-hkr', type: 'line', source: HKR_SRC, 'source-layer': 'centerline', minzoom: 12, layout: { visibility: 'none' }, paint: { 'line-opacity': 0 } })
     this.liveStyled = false

@@ -6,11 +6,15 @@
 // files as text), so styles and cards compare them as text.
 export const HKR_TILES = 'pmtiles://https://huggingface.co/buckets/alreadyopen/hk-roads/resolve/roads.pmtiles'
 export const HKR_SRC = 'hkr'
+// TD Traffic Aids Drawings (2nd generation), all 51 layers baked by hk-roads (z16-18); a curated set is drawn here
+export const HKA_TILES = 'pmtiles://https://huggingface.co/buckets/alreadyopen/hk-roads/resolve/traffic-aids.pmtiles'
+export const HKA_SRC = 'hka'
 export const HKR_HL = 'hr-alert'
 export const HKR_BOX: [number, number, number, number] = [113.8, 22.13, 114.45, 22.57]
 
 const T = (id: string, layer: string, type: string, minzoom: number, paint: any, extra: any = {}) =>
   ({ id, type, source: HKR_SRC, 'source-layer': layer, minzoom, paint, ...extra })
+const A = (id: string, layer: string, type: string, paint: any) => ({ id, type, source: HKA_SRC, 'source-layer': layer, minzoom: 16, paint })
 const SPEED = ['30 km/h', '50 km/h', '70 km/h', '80 km/h', '100 km/h', '110 km/h']
 const SPEED_C = ['#5e3c99', '#3b528b', '#21918c', '#5ec962', '#c8d43a', '#fde725']
 const NSR_VEH: Record<string, string> = { 1: 'All motor vehicles', 2: 'Taxis', 3: 'Public light buses', 4: 'Goods vehicles', 5: 'Others' }
@@ -41,6 +45,16 @@ export function hkRoadLayers(dark: boolean) {
     T('hr-vr', 'vehicle_restriction', 'circle', 14, { 'circle-color': '#ffffff', 'circle-radius': 5, 'circle-stroke-color': '#E69F00', 'circle-stroke-width': 2.5 }),
     T('hr-permit', 'permit', 'circle', 14, { 'circle-color': '#ffffff', 'circle-radius': 5, 'circle-stroke-color': '#0072B2', 'circle-stroke-width': 2.5 }),
     T('hr-park', 'gisp_on_street_parking', 'circle', 15, { 'circle-color': '#009E73', 'circle-radius': 3, 'circle-opacity': 0.85 }),
+    // Traffic aids, street zoom: yellow boxes, railings, markings, crossings, then signal heads on top. COLOR 6 is drawn yellow:
+    // our reading of TD's colour code (the tiles do not name it); the card shows TD's own codes.
+    A('ha-ybox', 'dtad_yl_box_poly', 'fill', { 'fill-color': '#F0E442', 'fill-opacity': 0.3 }),
+    A('ha-ybox-line', 'dtad_yl_box_line', 'line', { 'line-color': '#F0E442', 'line-width': 1.2 }),
+    A('ha-rail', 'dtad_railing_line', 'line', { 'line-color': dark ? '#9aa3a0' : '#5c6461', 'line-width': 1.5 }),
+    A('ha-mark', 'dtad_rd_mark_line', 'line', { 'line-color': ['match', ['to-string', ['get', 'COLOR']], '6', '#F0E442', dark ? '#f2f4f3' : '#ffffff'], 'line-width': 1.2,
+      'line-opacity': 0.9 }),
+    A('ha-cross', 'dtad_crossing_line', 'line', { 'line-color': dark ? '#f2f4f3' : '#ffffff', 'line-width': 2.5 }),
+    A('ha-signal', 'dtad_traffic_light_pt', 'circle', { 'circle-color': '#D55E00', 'circle-radius': ['interpolate', ['linear'], ['zoom'], 16, 2.5, 19, 5],
+      'circle-stroke-color': '#151918', 'circle-stroke-width': 1 }),
   ]
 }
 export const HKR_RULES = hkRoadLayers(false).map(l => l.id)
@@ -59,6 +73,8 @@ export const hkRoadLegend = () => [
   { label: 'Permit-only access', color: '#0072B2', shape: 'ring' as const },
   ...Object.values(TF).map(([label, color]) => ({ label, color, shape: 'dot' as const })),
   { label: 'On-street parking', color: '#009E73', shape: 'dot' as const },
+  { label: 'Traffic signal head (street zoom)', color: '#D55E00', shape: 'dot' as const }, { label: 'Pedestrian crossing and road marking (street zoom)', color: '#e6ebe8', shape: 'line' as const },
+  { label: 'Yellow box junction and yellow markings', color: '#F0E442', shape: 'line' as const }, { label: 'Railing', color: '#9aa3a0', shape: 'line' as const },
 ]
 
 type Row = [string, string]
@@ -86,6 +102,11 @@ export function hkRoadPick(id: string, p: any): { title: string; rows: Row[] } |
       ...has('Max length', p.MAX_LENGTH && `${p.MAX_LENGTH} m`), ...has('Max weight', p.MAX_WEIGHT && `${p.MAX_WEIGHT} t`), ...has('Max axle weight', p.MAX_AXLE_WEIGHT && `${p.MAX_AXLE_WEIGHT} t`), ...has('Remarks', p.REMARKS)] }
     case 'hr-permit': return { title: 'Access with permit only', rows: has('Remarks', p.REMARKS) }
     case 'hr-tf': return { title: TF[p.FEATURE_TYPE]?.[0] || 'Traffic feature', rows: has('Remarks', p.REMARKS) }
+    case 'ha-signal': case 'ha-mark': case 'ha-cross': case 'ha-rail': case 'ha-ybox': case 'ha-ybox-line': {
+      const t = { 'ha-signal': 'Traffic signal head', 'ha-mark': 'Road marking', 'ha-cross': 'Pedestrian crossing line', 'ha-rail': 'Railing', 'ha-ybox': 'Yellow box junction', 'ha-ybox-line': 'Yellow box junction' }[id]!
+      return { title: t, rows: [...has('TD symbol', p.REFNAME), ...has('TD marking or line type', p.LINETYPE), ...has('TD colour code', p.COLOR), ...has('Type', p.YELLOWBOX_TYPE),
+        ...has('Level', p.ELEVATION == null ? '' : p.ELEVATION === '0' ? 'At ground level' : `Above ground (level ${p.ELEVATION})`), ...has('Last updated', p.LAST_UPD_DATE),
+        ['Source', 'Transport Department, Traffic Aids Drawings (2nd generation)']] } }
     case 'hr-park': return { title: `On-street parking, ${title(p.STREET_NAME_ENG)}`, rows: [...has('Spaces', p.CAPACITY), ...has('Metered', p.METER_NONMETER === 'M' ? 'Yes' : p.METER_NONMETER === 'N' ? 'No' : p.METER_NONMETER),
       ...has('Vehicles', [p.VEHICLE_TYPE_DESCRIPTION_1, p.VEHICLE_TYPE_DESCRIPTION_2].filter(Boolean).join(', ')), ...has('Meter period', p.PARK_METER_PERIOD_DESC),
       ...has('Hours', p.OPERATIVE_HOUR_ENG), ...has('Remarks', p.IRNP_REMARKS_ENG)] }

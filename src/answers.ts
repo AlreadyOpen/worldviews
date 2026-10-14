@@ -313,10 +313,11 @@ async function base(w: World, v: ViewId): Promise<Answer> {
       }
       const n = (id: string) => seen.get(id)?.size || 0, total = [...seen.values()].reduce((a, x) => a + x.size, 0)
       const parts = [['hr-speed', 'speed limit sections'], ['hr-bus', 'bus-only lanes'], ['hr-nsr', 'no-stopping restrictions'], ['hr-turn', 'restricted turns'],
-        ['hr-proh', 'prohibition signs'], ['hr-vr', 'vehicle limits'], ['hr-tf', 'crossings, yellow boxes, tolls and dead ends'], ['hr-park', 'on-street parking places']]
+        ['hr-proh', 'prohibition signs'], ['hr-vr', 'vehicle limits'], ['hr-tf', 'crossings, yellow boxes, tolls and dead ends'], ['hr-park', 'on-street parking places'],
+        ['ha-signal', 'traffic signal heads'], ['ha-cross', 'crossing lines'], ['ha-ybox', 'yellow box junctions'], ['ha-mark', 'road marking lines'], ['ha-rail', 'railings']]
         .filter(([id]) => n(id)).map(([id, label]) => `${nf.format(n(id))} ${label}`)
       return { ...base, status: total ? 'ok' : 'empty', value: nf.format(total), counts: 'road rules drawn in view',
-        detail: parts.length ? `${parts.join(', ')}.${z < 14 ? ' Turning bans, no-stopping lines and signs appear from street level.' : ''}` : 'None drawn here yet.' }
+        detail: parts.length ? `${parts.join(', ')}.${z < 14 ? ' Turning bans, no-stopping lines and signs appear from street level.' : z < 16 ? ' Signals, crossings, markings and railings appear closer in.' : ''}` : 'None drawn here yet.' }
     }
     const legend: LegendSpec = sub === 'crashes' ? { kind: 'items', title: 'Crash locations, worst crash at each', items: [] }
       : { kind: 'ramp', title: 'Vehicles per day (AADT estimate)', colors: V, ticks: AADT_STOPS.map((x, i) => i === AADT_STOPS.length - 1 ? `${nf.format(x)}+` : nf.format(x)), note: 'Thicker lines carry more traffic. Crash locations appear from suburb zoom.' }
