@@ -244,7 +244,9 @@ button, input, select { font: inherit; color: inherit }
 .cs-feed small, .cs-feed li small { color: var(--ink-2); font-size: 0.75rem; white-space: nowrap }
 .cs-feed ul { list-style: none; margin: 0; padding: 0 0 6px; border-top: 1px solid var(--line); max-height: 45vh; overflow: auto }
 .cs-feed li button { display: grid; width: 100%; padding: 6px 12px; border: 0; background: none; text-align: left; cursor: pointer; font-size: 0.875rem }
-.cs-feed li button:hover { background: var(--surface-2) }
+.cs-feed li button:hover, .cs-feed li a:hover { background: var(--surface-2) }
+.cs-feed li a { display: grid; padding: 6px 12px; color: inherit; text-decoration: none; font-size: 0.875rem }
+.cs-feed-more { width: 100%; padding: 6px 12px; border: 0; border-top: 1px solid var(--line); background: none; color: var(--accent); cursor: pointer; text-align: left; font-size: 0.8125rem }
 
 /* CS1: one band along the bottom, as in the game: the info-view tools bottom-left, the city's numbers in the middle,
    the clock bottom-right; the active view's panel top-left; the query card top-right */

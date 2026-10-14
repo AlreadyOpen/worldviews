@@ -590,6 +590,8 @@ function Feed({ fly }: { fly: (c: { center: [number, number]; zoom: number }) =>
   type Item = { id: string; text: string; t: number; c?: [number, number]; src: string }   // c: none for global news (space weather)
   const [items, setItems] = useState<Item[]>([])
   const [open, setOpen] = useState(false)
+  const [press, setPress] = useState<{ id: string; text: string; t: number; href: string }[]>([])
+  const [allPress, setAllPress] = useState(false)
   useEffect(() => {
     let live = true
     Promise.all([D.quakes('day'), D.gdacs(), D.eonet(), swpcAlerts(), hkTraffic(), hkWarnings(), hkPress()]).then(([q, g, e, a, hk, hw, hp]) => {
@@ -599,13 +601,13 @@ function Feed({ fly }: { fly: (c: { center: [number, number]; zoom: number }) =>
       for (const f of (e.data as any)?.features || []) out.push({ id: 'e' + f.properties.id, text: f.properties.title, t: Date.parse(f.properties.date), c: f.geometry.coordinates, src: 'NASA EONET' })
       for (const x of (a.data || []).slice(0, 4)) out.push({ ...x, src: 'NOAA SWPC' })
       for (const x of hw.data || []) out.push({ ...x, src: 'Hong Kong Observatory' })
-      for (const x of (hp.data || []).slice(0, 4)) out.push({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c, src: 'HKSAR Government press release' })
+      for (const x of (hp.data?.notices || []).slice(0, 4)) out.push({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c, src: 'HKSAR Government press release' })
       for (const x of hk.data || []) out.push({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c || HK_CENTRE, src: 'Transport Department' })
       const top = out.filter(i => Number.isFinite(i.t)).sort((a, b) => b.t - a.t).slice(0, 12)
       // one place kept for the newest space-weather alert of the last two days, so earthquakes do not push it out
       const sw = out.filter(i => i.src === 'NOAA SWPC' && Date.now() - i.t < 48 * 3600e3).sort((a, b) => b.t - a.t)[0]
       if (sw && !top.includes(sw)) top.splice(top.length - 1, 1, sw)
-      if (live) setItems(top.sort((a, b) => b.t - a.t))
+      if (live) { setItems(top.sort((a, b) => b.t - a.t)); setPress(hp.data?.all || []) }
     }).catch(err => console.error('feed failed', err))
     return () => { live = false }
   }, [])
@@ -618,6 +620,9 @@ function Feed({ fly }: { fly: (c: { center: [number, number]; zoom: number }) =>
         <iconify-icon icon="ph:chat-circle-dots" width="18" /><span className="cs-feed-text">{items[0].text}</span><small>{ago(items[0].t)}</small>
       </button>
       {open && <ul>{items.map(i => <li key={i.id}><button onClick={() => go(i)}><span>{i.text}</span><small>{i.src}, {ago(i.t)}</small></button></li>)}</ul>}
+      {open && press.length > 0 && <button className="cs-feed-more" aria-expanded={allPress} onClick={() => setAllPress(v => !v)}>
+        {allPress ? 'Hide' : 'Show'} all {press.length} Hong Kong government press releases</button>}
+      {open && allPress && <ul>{press.map(i => <li key={i.id}><a href={i.href} target="_blank" rel="noreferrer"><span>{i.text}</span><small>HKSAR Government press release, {ago(i.t)}</small></a></li>)}</ul>}
     </aside>
   )
 }

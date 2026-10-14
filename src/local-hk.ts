@@ -84,10 +84,15 @@ export const hkWarnings = () => once('hko-warn', async () => Object.values(await
 // Feeds without CORS (AQHI, press releases) come from AlreadyOpen hk-alerts, republished every 15 minutes
 export const ALERTS = 'https://huggingface.co/buckets/alreadyopen/hk-alerts/resolve'
 // Press releases that are notices about now (traffic arrangements, suspensions, closures, flags, warnings, cases), for the feed;
-// the bucket keeps all 100. ponytail: a keyword list; a press release about a new policy with "closure" in it slips through.
-const NOTICE = /traffic arrangement|suspen|closure|closed|flags? hoisted|warning|landslip|flood|water supply|outbreak|case of|confirmed .* case|power|road works|diversion|cancel/i
-export const hkPress = () => once('hk-press', async () => ((await json(`${ALERTS}/live/press.json`)).items as any[])
-  .filter(i => NOTICE.test(i.title)).map(i => ({ id: i.link, text: i.title, t: Date.parse(i.time), c: HK_CENTRE, href: i.link })))
+// `all` keeps the 100 the bucket holds, for the feed's "all press releases" switch. Notices drop repeated titles (newest kept).
+// ponytail: a keyword list; a press release about a new policy with "closure" in it slips through, a notice worded otherwise is missed.
+const NOTICE = /traffic arrangement|road arrangement|lane closure|suspen|closure|closed|flags? hoisted|warning|landslip|flood|water supply|water cut|fresh water|outbreak|case of|confirmed .* case|power (cut|supply|outage|failure|interruption)|road works|diversion|cancel|evacuat/i
+export const hkPress = () => once('hk-press', async () => {
+  const all = ((await json(`${ALERTS}/live/press.json`)).items as any[]).map(i => ({ id: i.link as string, text: i.title as string, t: Date.parse(i.time), c: HK_CENTRE, href: i.link as string }))
+    .sort((a, b) => b.t - a.t)
+  const seen = new Set<string>()
+  return { all, notices: all.filter(i => NOTICE.test(i.text) && !seen.has(i.text) && !!seen.add(i.text)) }
+})
 
 // "less than 15 minutes", "1 hour", "over 8 hours" to minutes
 const mins = (s = '') => { const m = s.match(/([\d.]+)\s*(minute|hour)/); return m ? +m[1] * (m[2] === 'hour' ? 60 : 1) : null }
