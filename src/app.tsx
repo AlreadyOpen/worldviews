@@ -31,8 +31,8 @@ const OPTIONS = {
   theme: { label: 'Theme', values: { system: 'Follow the system', light: 'Light', dark: 'Dark' } },
   names: { label: 'View names', values: { question: 'Questions', noun: 'Nouns' } },
 } as const
-type S = { ui: string; feed: string; marks: string; switch: string; panel: string; time: string; theme: string; names: string; view: ViewId | ''; on: ViewId[]; sub: Partial<Record<ViewId, string>>; b: ViewId; hour: number; day: number; fire: FireMode; hl: boolean }
-const DEFAULT: S = { ui: 'catalog', feed: 'on', marks: 'three', switch: 'v3', panel: 'p2', time: 't1', theme: 'system', names: 'question', view: 'height', on: ['height'], sub: {}, b: 'hazards', hour: 24, day: 30, fire: FIRE_DEFAULT, hl: false }
+type S = { ui: string; feed: string; marks: string; switch: string; panel: string; time: string; theme: string; names: string; view: ViewId | ''; on: ViewId[]; sub: Partial<Record<ViewId, string>>; b: ViewId; hour: number; day: number; fire: FireMode; hl: boolean; press: boolean }
+const DEFAULT: S = { ui: 'catalog', feed: 'on', marks: 'three', switch: 'v3', panel: 'p2', time: 't1', theme: 'system', names: 'question', view: 'height', on: ['height'], sub: {}, b: 'hazards', hour: 24, day: 30, fire: FIRE_DEFAULT, hl: false, press: false }
 const WORLD = { center: [96, 20] as [number, number], zoom: 1.85, pitch: 0, bearing: 0 }
 const isView = (v: any): v is ViewId => VIEW_IDS.includes(v)
 // Read once at load: the URL is rewritten from state right after, and `at` (camera) is not part of state.
@@ -52,6 +52,7 @@ function parse(q: URLSearchParams, base: S = DEFAULT): S {
   if (q.has('day')) s.day = Math.max(0, Math.min(30, +q.get('day')!))
   if (isFireMode(q.get('fire'))) s.fire = q.get('fire') as FireMode
   if (q.get('hl') === 'on') s.hl = true
+  if (q.get('press') === 'all') s.press = true
   return s
 }
 function serialise(s: S) {
@@ -65,6 +66,7 @@ function serialise(s: S) {
   if (s.time === 't3') q.set('day', String(s.day))
   if (s.fire !== FIRE_DEFAULT) q.set('fire', s.fire)
   if (s.hl) q.set('hl', 'on')
+  if (s.press) q.set('press', 'all')
   return q.toString()
 }
 const name = (v: ViewId, s: S) => (s.names === 'noun' ? VIEWS[v].noun : VIEWS[v].question)
@@ -531,7 +533,7 @@ function Sim({ s, setS, theme, view, ans, pick, clearPick, choose, fly }: {
 
       {view && <InfoPanel s={s} setS={setS} view={view} a={ans[view]} close={() => setS(x => ({ ...x, view: '', on: [] }))} />}
       {pick && <PickCard pick={pick} clear={clearPick} cls="float cs-pick" />}
-      {s.feed === 'on' && <Feed fly={fly} />}
+      {s.feed === 'on' && <Feed fly={fly} allPress={s.press} setAllPress={v => setS(x => ({ ...x, press: v }))} />}
     </div>
   )
 }
@@ -586,12 +588,12 @@ function InfoPanel({ s, setS, view, a, close }: { s: S; setS: (f: (x: S) => S) =
 }
 
 // Chirper-style feed: the newest real events (USGS earthquakes, GDACS alerts, NASA EONET), one bubble; open it for the list.
-function Feed({ fly }: { fly: (c: { center: [number, number]; zoom: number }) => void }) {
+// allPress (URL press=all): the list of all Hong Kong press releases is open; a link with it opens the feed too
+function Feed({ fly, allPress, setAllPress }: { fly: (c: { center: [number, number]; zoom: number }) => void; allPress: boolean; setAllPress: (v: boolean) => void }) {
   type Item = { id: string; text: string; t: number; c?: [number, number]; src: string }   // c: none for global news (space weather)
   const [items, setItems] = useState<Item[]>([])
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(allPress)
   const [press, setPress] = useState<{ id: string; text: string; t: number; href: string }[]>([])
-  const [allPress, setAllPress] = useState(false)
   useEffect(() => {
     let live = true
     Promise.all([D.quakes('day'), D.gdacs(), D.eonet(), swpcAlerts(), hkTraffic(), hkWarnings(), hkPress()]).then(([q, g, e, a, hk, hw, hp]) => {
@@ -620,7 +622,7 @@ function Feed({ fly }: { fly: (c: { center: [number, number]; zoom: number }) =>
         <iconify-icon icon="ph:chat-circle-dots" width="18" /><span className="cs-feed-text">{items[0].text}</span><small>{ago(items[0].t)}</small>
       </button>
       {open && <ul>{items.map(i => <li key={i.id}><button onClick={() => go(i)}><span>{i.text}</span><small>{i.src}, {ago(i.t)}</small></button></li>)}</ul>}
-      {open && press.length > 0 && <button className="cs-feed-more" aria-expanded={allPress} onClick={() => setAllPress(v => !v)}>
+      {open && press.length > 0 && <button className="cs-feed-more" aria-expanded={allPress} onClick={() => setAllPress(!allPress)}>
         {allPress ? 'Hide' : 'Show'} all {press.length} Hong Kong government press releases</button>}
       {open && allPress && <ul>{press.map(i => <li key={i.id}><a href={i.href} target="_blank" rel="noreferrer"><span>{i.text}</span><small>HKSAR Government press release, {ago(i.t)}</small></a></li>)}</ul>}
     </aside>
