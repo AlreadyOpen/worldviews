@@ -9,7 +9,7 @@ import * as maplibregl from 'maplibre-gl'
 export type MarksMode = '2d' | 'shapes' | 'three'
 export const MARKS_ZOOM = 12
 type Part = { prim: 'cyl' | 'cone' | 'box' | 'sphere'; sides?: number; r?: number; w?: number; l?: number; x?: number; y?: number; z0: number; z1: number; tint?: 'white' | 'dark'
-  mat?: 'bus' | 'panel' | 'metal' | 'glow' }   // mat: a dedicated three.js look (the satellite); without it, plain lit colour
+  mat?: 'bus' | 'panel' | 'metal' | 'glow' | 'aurora' }   // mat: a dedicated three.js look (the satellite); without it, plain lit colour
 type Mark = { lon: number; lat: number; alt: number; s: number; h: number; c: [number, number, number]; kind: string; yaw: number }
 
 // Unit shapes: r, w, l and y in footprint radii (s metres), z in heights (h metres). 'tint' parts keep a fixed colour.
@@ -24,6 +24,10 @@ const SHAPES: Record<string, Part[]> = {
   plane: [{ prim: 'box', w: 0.28, l: 1.8, z0: 0, z1: 0.28 }, { prim: 'box', w: 1.9, l: 0.4, y: 0.1, z0: 0.08, z1: 0.18 }, { prim: 'box', w: 0.7, l: 0.25, y: -0.75, z0: 0.1, z1: 0.18 }],
   // A flat-panel satellite (Helen 2026-10-14, after a Starlink reference: black bus, long gridded solar wings, booms, dishes),
   // our own simple geometry. Span about 6 s; the light on top keeps the 2D legend's altitude colour.
+  // Large groups (Starlink, every active satellite, debris): a small glowing point each, so thousands stay readable
+  satdot: [{ prim: 'sphere', r: 0.5, z0: 0, z1: 1, mat: 'glow' }],
+  // Aurora: a thin vertical curtain per 1-degree forecast cell, 100 to 300 km up, additive green fading upwards (real size, not screen size)
+  aurora: [{ prim: 'box', w: 2, l: 0.02, z0: 0, z1: 1, mat: 'aurora' }],
   sat: [
     { prim: 'box', w: 0.8, l: 0.6, z0: 0.4, z1: 0.48, mat: 'bus', tint: 'dark' },
     { prim: 'box', w: 2.4, l: 0.7, x: 1.85, z0: 0.435, z1: 0.445, mat: 'panel', tint: 'white' },
@@ -35,7 +39,7 @@ const SHAPES: Record<string, Part[]> = {
   ],
 }
 const TINT = { white: [236, 240, 238] as [number, number, number], dark: [42, 47, 45] as [number, number, number] }
-const AIR = new Set(['plane', 'sat'])
+const AIR = new Set(['plane', 'sat', 'satdot', 'aurora'])
 
 function kindOf(id: string) {
   if (/works/.test(id)) return 'cone'
@@ -49,7 +53,7 @@ function kindOf(id: string) {
   return 'pin'
 }
 // Our point layers (circles) and their icons; labels stay 2D.
-const isMarkCircle = (l: any) => l.type === 'circle' && /^(z-|t-mtr-st|a-dot|a-world|s-dot|L-|f-.*-pt$)/.test(l.id)
+const isMarkCircle = (l: any) => l.type === 'circle' && l.id !== 'L-aurora' && /^(z-|t-mtr-st|a-dot|a-world|s-dot|L-|f-.*-pt$)/.test(l.id)   // the aurora glow stays 2D under its curtains
 const isMarkIcon = (l: any) => l.type === 'symbol' && /-icon$/.test(l.id)
 
 export class Marks {
@@ -59,6 +63,8 @@ export class Marks {
   private three?: { layer: any; set: (marks: Mark[], origin: [number, number]) => void; hit: (pt: { x: number; y: number }) => Mark | null }
   private loading: Partial<Record<'three', Promise<void>>> = {}   // one load each, however often draw runs meanwhile
   private last: Mark[] = []
+  orbits: { i: number; pts: number[][] }[] = []   // set by the engine: one ring per satellite, [lon, lat, alt km]
+  private rings: { pts: number[][]; c: [number, number, number] }[] = []
 
   constructor(private m: maplibregl.Map, private visible: () => string[]) {
     m.on('idle', () => { if (this.mode !== '2d') this.update() })
@@ -93,8 +99,7 @@ export class Marks {
   private collect(): Mark[] {
     const m = this.m, z = m.getZoom(), vis = new Set(this.visible())
     const ids = m.getStyle().layers.filter(l => isMarkCircle(l) && vis.has(l.id) && m.getLayoutProperty(l.id, 'visibility') !== 'none').map(l => l.id)
-    if (!ids.length) return []
-    const cam = camera(m)
+    const cam = camera(m), satC = new Map<number, [number, number, number]>()
     const out: Mark[] = [], seen = new Set<string>(), rendered = m.queryRenderedFeatures({ layers: ids })
     // queryRenderedFeatures returns nothing on the zoomed-out globe (seen 2026-10-14, MapLibre 6.13, even for the country layer at
     // the screen centre). Things in the air live there, so for them read the source and evaluate the layer's paint ourselves.
@@ -108,8 +113,11 @@ export class Marks {
           layer: { id, paint: { 'circle-color': ev('circle-color', f), 'circle-radius': ev('circle-radius', f), 'circle-stroke-color': ev('circle-stroke-color', f), 'circle-stroke-width': ev('circle-stroke-width', f) } } })
     }
     for (const f of rendered) {
-      if (f.geometry.type !== 'Point' || out.length >= 6000) continue
-      const kind = kindOf(f.layer.id), air = AIR.has(kind)
+      if (f.geometry.type !== 'Point' || out.length >= 15000) continue
+      const paint0: any = (f.layer as any).paint || {}
+      let kind = kindOf(f.layer.id)
+      if (kind === 'sat' && (paint0['circle-radius'] ?? 5) < 4) kind = 'satdot'   // the 2D layer draws big groups as small dots
+      const air = AIR.has(kind)
       if (z < MARKS_ZOOM && !air) continue
       const [lon, lat] = (f.geometry as any).coordinates as number[], k = `${f.layer.id}|${lon}|${lat}`
       if (seen.has(k)) continue
@@ -117,13 +125,29 @@ export class Marks {
       const paint: any = (f.layer as any).paint || {}
       const fill = paint['circle-color'], ring = (paint['circle-stroke-width'] ?? 0) >= 2 || (fill && fill.a === 0)   // ring or hollow marker: its colour is the stroke
       const col = (ring && paint['circle-stroke-color']) || fill || { r: 0.5, g: 0.5, b: 0.5 }
-      const alt = kind === 'plane' ? +(f.properties as any)?.alt_m || 0 : kind === 'sat' ? (+(f.properties as any)?.alt || 0) * 1000 : 0
+      const alt = kind === 'plane' ? +(f.properties as any)?.alt_m || 0 : kind === 'sat' || kind === 'satdot' ? (+(f.properties as any)?.alt || 0) * 1000 : 0
       const mpp = cam.mpp([lon, lat], alt)   // metres per screen pixel at the object itself: its distance from the camera, not the ground's
-      const s = Math.max(paint['circle-radius'] ?? 5, 3.5) * mpp * (kind === 'station' ? 1.6 : air ? 3.5 : 1.1), p: any = f.properties || {}
+      const s = Math.max(paint['circle-radius'] ?? 5, 3.5) * mpp * (kind === 'station' ? 1.6 : kind === 'satdot' ? 1.6 : air ? 3.5 : 1.1), p: any = f.properties || {}
+      if (kind === 'sat' || kind === 'satdot') satC.set(+p.i, [Math.round(col.r * 255), Math.round(col.g * 255), Math.round(col.b * 255)])
       out.push({ lon, lat, kind, s, h: air ? s : s * 3.5, yaw: kind === 'sat' ? ((+p.i || 0) * 47) % 360 : +p.track || 0,   // satellites: a fixed heading each, so they do not all line up
         alt,
         c: [Math.round(col.r * 255), Math.round(col.g * 255), Math.round(col.b * 255)] })
     }
+    // Aurora curtains, from the forecast layer's own source (queries return nothing on the zoomed-out globe)
+    if (vis.has('L-aurora') && m.getLayer('L-aurora') && m.getLayoutProperty('L-aurora', 'visibility') !== 'none') {
+      const got = new Set<string>()
+      for (const f of m.querySourceFeatures('L-aurora')) {
+        const [lon, lat] = (f.geometry as any).coordinates as number[], k = `${lon}|${lat}`, pc = +(f.properties as any)?.p || 0
+        if (got.has(k)) continue
+        got.add(k)
+        const g = Math.min(1, 0.25 + pc / 60)
+        out.push({ lon, lat, kind: 'aurora', s: 111320 * Math.cos(lat * Math.PI / 180) * 0.5, h: 200e3, alt: 100e3, yaw: 0, c: [Math.round(60 * g), Math.round(255 * g), Math.round(130 * g)] })
+      }
+    }
+    // each ring in its satellite's altitude colour, lifted towards white so the low (dark blue) orbits show on the night globe;
+    // satellites behind the globe have no 2D colour to read, so their rings are light grey
+    const lift = (c: number[]) => c.map(v => Math.round(v + (255 - v) * 0.45)) as [number, number, number]
+    this.rings = vis.has('s-dot') ? this.orbits.map(o => ({ pts: o.pts, c: lift(satC.get(o.i) || [200, 205, 210]) })) : []
     return out
   }
 
@@ -163,6 +187,7 @@ export class Marks {
   private async loadThree() {
     const T = await import('three'), m = this.m
     let P = new T.Matrix4(), owner: Mark[][] = []
+    let rings: any[] = []
     let scene: any, camera: any, renderer: any, origin: [number, number] = [0, 0], meshes: any[] = [], marks: Mark[] = [], builtGlobe: boolean | null = null
     const geos = new Map<string, any>()
     const R = 6371008.8   // MapLibre's earth radius (metres), as in its globe + three.js example
@@ -182,6 +207,14 @@ export class Marks {
       g.strokeStyle = edge; g.lineWidth = 4; g.strokeRect(1, 1, w - 2, h - 2)
       const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; t.anisotropy = 4; return t
     }
+    // The curtain's glow: bright at its foot, fading out towards the top
+    const fade = () => {
+      const c = document.createElement('canvas'); c.width = 4; c.height = 128
+      const g = c.getContext('2d')!, gr = g.createLinearGradient(0, 0, 0, 128)
+      gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgb(90,90,90)'); gr.addColorStop(0.9, 'rgb(255,255,255)'); gr.addColorStop(1, 'rgb(160,160,160)')
+      g.fillStyle = gr; g.fillRect(0, 0, 4, 128)
+      const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; return t
+    }
     const mats = new Map<string, any>()
     const material = (p: Part) => {
       const k = p.mat || 'plain'
@@ -189,6 +222,7 @@ export class Marks {
         : k === 'bus' ? new T.MeshPhongMaterial({ map: grid(256, 192, '#0d0f10', '#3a4046', 4, 2, '#8a939a'), specular: 0x7a848c, shininess: 90 })
         : k === 'metal' ? new T.MeshPhongMaterial({ color: 0xd9dee2, specular: 0xffffff, shininess: 120 })
         : k === 'glow' ? new T.MeshBasicMaterial({ color: 0xffffff })
+        : k === 'aurora' ? new T.MeshBasicMaterial({ map: fade(), transparent: true, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide })
         : new T.MeshLambertMaterial({ color: 0xffffff }))
       return mats.get(k)
     }
@@ -199,10 +233,19 @@ export class Marks {
     }
     const build = (globe: boolean) => {
       for (const x of meshes) { scene.remove(x); x.dispose() }   // materials and geometries are cached and shared
+      for (const x of rings) { scene.remove(x); x.geometry.dispose(); x.material.dispose() }
+      rings = []
       meshes = []; owner = []; builtGlobe = globe
       const oc = maplibregl.MercatorCoordinate.fromLngLat(origin, 0), u = oc.meterInMercatorCoordinateUnits()
       const tilt = new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), 35 * Math.PI / 180)
       const q = new T.Quaternion(), zAxis = new T.Vector3(0, 0, 1), local = new T.Matrix4(), col = new T.Color()
+      if (globe) for (const r of this.rings) {   // orbit rings: globe view only (in the flat map a ring would cross the antimeridian)
+        const g = new T.BufferGeometry().setFromPoints(r.pts.map(([lon, lat, alt]) => new T.Vector3(0, 0, 1 + alt * 1000 / R)
+          .applyMatrix4(new T.Matrix4().makeRotationY(lon / 180 * Math.PI).multiply(new T.Matrix4().makeRotationX(-lat / 180 * Math.PI)))))
+        const line = new T.LineLoop(g, new T.LineBasicMaterial({ color: col.setRGB(r.c[0] / 255, r.c[1] / 255, r.c[2] / 255, T.SRGBColorSpace).clone(), transparent: true, opacity: 0.6, depthWrite: false }))
+        line.frustumCulled = false
+        scene.add(line); rings.push(line)
+      }
       for (const [kind, list] of group(marks)) SHAPES[kind].forEach(p => {
         const mesh = new T.InstancedMesh(geo(p), material(p), list.length)
         mesh.frustumCulled = false   // the instances are placed by our matrices, not the unit geometry's bounds
@@ -213,7 +256,7 @@ export class Marks {
           else { const mc = maplibregl.MercatorCoordinate.fromLngLat([d.lon, d.lat], 0)
             local.compose(new T.Vector3((mc.x - oc.x) / u, -(mc.y - oc.y) / u, d.alt), q, new T.Vector3(d.s, d.s, d.h)) }
           mesh.setMatrixAt(i, local)
-          const c = p.mat === 'glow' ? d.c : p.mat ? [255, 255, 255] : p.tint ? TINT[p.tint] : d.c
+          const c = p.mat === 'glow' || p.mat === 'aurora' ? d.c : p.mat ? [255, 255, 255] : p.tint ? TINT[p.tint] : d.c
           mesh.setColorAt(i, col.setRGB(c[0] / 255, c[1] / 255, c[2] / 255, T.SRGBColorSpace))
         })
         scene.add(mesh); meshes.push(mesh); owner.push(list)
@@ -250,7 +293,7 @@ export class Marks {
         const h = hits.find((r: any) => r.instanceId != null)
         return h ? owner[meshes.indexOf(h.object)][h.instanceId] : null
       },
-      set: (next, o) => { add(); marks = next; origin = o; builtGlobe = null; if (scene && !next.length) { for (const x of meshes) scene.remove(x); meshes = [] } m.triggerRepaint() },
+      set: (next, o) => { add(); marks = next; origin = o; builtGlobe = null; if (scene && !next.length) { for (const x of [...meshes, ...rings]) scene.remove(x); meshes = []; rings = [] } m.triggerRepaint() },
     }
   }
 }

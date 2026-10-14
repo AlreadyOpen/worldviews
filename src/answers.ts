@@ -1,3 +1,4 @@
+import { spaceWeather, kpWord } from './local-space'
 // What each view answers right now, for the current camera: one number, what it counts, and the state behind it.
 import * as D from './data'
 import * as Sat from './sats'
@@ -73,6 +74,7 @@ export async function answer(w: World, v: ViewId): Promise<Answer> {
   if (lines.length) {
     out.detail = [a.detail, lines.join('. ') + '.'].filter(Boolean).join(' ')
     if (out.status === 'empty' && w.state.views.includes(v)) out.status = 'ok'
+    if (out.value == null && out.counts) out.value = nf.format(inView)
   }
   if (items.length && out.legend?.kind === 'items') out.legend = { ...out.legend, items: [...out.legend.items, ...items] }
   else if (items.length && out.legend) out.legend = { ...out.legend, note: [out.legend.note, items.map(i => i.label).join('. ') + '.'].filter(Boolean).join(' ') }
@@ -112,6 +114,8 @@ async function base(w: World, v: ViewId): Promise<Answer> {
       if (inView([p.lon, p.lat]) && arc(c, [p.lon, p.lat]) < 80) here++   // the globe's bounds span the world at low zoom: keep the near side
       if (Sat.elevation(p.eci, g, c) > 10) over++
     }
+    const sw = (await spaceWeather()).data
+    const swLine = sw ? ` Space weather: Kp ${nf.format(sw.kp)} (${kpWord(sw.kp)})${sw.wind ? `, solar wind ${nf.format(sw.wind)} km/s` : ''}${sw.flare ? `, latest X-ray flare ${sw.flare}` : ''} (NOAA SWPC).` : ''
     const iss = f.data.sats.find(s => s.id === 25544), ip = iss && Sat.where(iss.rec, t, g), pass = iss && Sat.nextPass(iss.rec, c, t)
     const deg = (x: number, p: string, n: string) => `${nf.format(Math.abs(x))}°${x >= 0 ? p : n}`
     const issLine = ip ? ` ISS now over ${deg(ip.lat, 'N', 'S')} ${deg(ip.lon, 'E', 'W')}, ${nf.format(ip.alt)} km up, ${nf.format(ip.speed)} km/s.` +
@@ -119,7 +123,7 @@ async function base(w: World, v: ViewId): Promise<Answer> {
       : ' The ISS is in the Space stations group.'
     return { status: 'ok', legend, updated: `CelesTrak elements fetched ${time(f.data.at)}, positions at ${t.toLocaleTimeString('en-GB')}`, value: nf.format(over),
       counts: `of ${nf.format(f.data.sats.length)} (${label.toLowerCase()}) more than 10° above the horizon at the map centre`,
-      detail: `${nf.format(here)} are over the part of the Earth in view.${issLine}` }
+      detail: `${nf.format(here)} are over the part of the Earth in view.${issLine}${swLine}`, credits: sw ? [{ name: 'NOAA Space Weather Prediction Center', href: 'https://www.swpc.noaa.gov/', licence: 'Public domain (US Government)' }] : undefined }
   }
   if (v === 'height') {
     const sub = w.state.sub.height || 'all'
@@ -162,6 +166,10 @@ async function base(w: World, v: ViewId): Promise<Answer> {
       return { ...base, status: qs.length ? 'ok' : 'empty', value: nf.format(qs.length), counts: `earthquakes M2.5+ worldwide ${window}`,
         detail: `${top ? `Strongest: M${top.properties.mag}, ${top.properties.place}. ` : ''}${g.data ? `${red} GDACS orange or red alerts open. ` : ''}Zoom in to count a region.` }
     }
+    // sub-maps that only the country sources fill (local.ts): their lines and count come from answer()
+    if (sub === 'roads' || sub === 'health')
+      return { ...base, legend: { kind: 'items', title: 'Colour: kind of alert', items: [] }, status: 'empty', counts: sub === 'roads' ? 'road and transport alerts in view' : 'A&E departments and air stations in view',
+        detail: sub === 'roads' ? 'Sources cover Hong Kong and South Australia.' : 'Sources cover Hong Kong.' }
     if (sub !== 'all' && sub !== 'quakes') {
       const ev = [...(g.data?.features || []), ...(e.data?.features || [])].filter((f: any) =>
         inView(f.geometry.coordinates) && ((f.properties.eventtype && ({ TC: 'storms', FL: 'floods', DR: 'floods', WF: 'fire', VO: 'fire' } as any)[f.properties.eventtype] === sub) ||

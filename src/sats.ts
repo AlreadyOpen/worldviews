@@ -4,7 +4,11 @@
 import { json2satrec, propagate, gstime, eciToGeodetic, eciToEcf, ecfToLookAngles, degreesLat, degreesLong, degreesToRadians, type SatRec } from 'satellite.js'
 import { once } from './data'
 
-export const SAT_GROUPS: Record<string, string> = { stations: 'Space stations', visual: 'Brightest', gnss: 'Navigation (GNSS)', weather: 'Weather', starlink: 'Starlink' }
+export const SAT_GROUPS: Record<string, string> = { stations: 'Space stations', visual: 'Brightest', gnss: 'Navigation (GNSS)', weather: 'Weather', starlink: 'Starlink',
+  active: 'Every active satellite', debris: 'Debris from four breakups' }
+// 'debris' = CelesTrak's tracked fragments of the four best-known breakups: the Fengyun-1C test (2007), the Iridium 33 / Cosmos 2251
+// collision (2009) and the Cosmos 1408 test (2021). Each group is still one request at most every 2 hours.
+export const DEBRIS = ['fengyun-1c-debris', 'cosmos-2251-debris', 'iridium-33-debris', 'cosmos-1408-debris']
 const TTL = 2 * 3600e3
 export type Sat = { name: string; id: number; epoch: string; rec: SatRec }
 
@@ -13,6 +17,11 @@ export type Sat = { name: string; id: number; epoch: string; rec: SatRec }
 // header. A failure is cached the same way (stored with its status), so a refused request is not repeated for 2 hours.
 // Without Cache Storage (private mode, old browser) it falls back to a plain fetch, still once per page visit (once()).
 export const gp = (group: string) => once('gp-' + group, async () => {
+  if (group === 'debris') {
+    const parts = await Promise.all(DEBRIS.map(g => gp(g)))
+    if (parts.every(x => !x.data)) throw new Error(parts.map(x => x.error).filter(Boolean)[0] || 'CelesTrak: no debris group loaded')
+    return { sats: parts.flatMap(x => x.data?.sats || []), at: Math.min(...parts.map(x => x.data?.at ?? Date.now())) }
+  }
   const url = `https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=json`
   let store: Cache | null = null, c: any = null
   try {
@@ -70,4 +79,16 @@ export function track(rec: SatRec, now = Date.now()) {
     return lines.filter(l => l.length > 1)
   }
   return { past: part(-5400, 0), next: part(0, 5400) }
+}
+
+// One revolution as a closed ring, frozen in space at time t (the orbit itself, not the ground track): 120 points of [lon, lat, alt km]
+export function orbit(rec: SatRec, t = new Date(), n = 120) {
+  const g = gstime(t), period = 2 * Math.PI / rec.no * 60e3, out: number[][] = []   // rec.no: mean motion, radians per minute
+  for (let i = 0; i < n; i++) {
+    const pv = propagate(rec, new Date(t.getTime() + period * i / n))
+    if (!pv || typeof pv.position !== 'object') continue
+    const p = eciToGeodetic(pv.position, g)
+    out.push([degreesLong(p.longitude), degreesLat(p.latitude), p.height])
+  }
+  return out
 }

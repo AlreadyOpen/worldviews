@@ -15,6 +15,8 @@ import { answer, type Answer } from './answers'
 import * as D from './data'
 import * as Sat from './sats'
 import { aemo, auState, NEM_REGION } from './local'
+import { spaceWeather, swpcAlerts, kpWord } from './local-space'
+import { hkTraffic, hkWarnings, hkPress, HK_CENTRE } from './local-hk'
 import { HK, SOURCES, VIEWS, VIEW_IDS, type ViewId } from './views'
 import { FIRE_DEFAULT, FIRE_MODES, isFireMode, type FireMode } from './fire'
 
@@ -472,6 +474,8 @@ function Sim({ s, setS, theme, view, ans, pick, clearPick, choose, fly }: {
   const stat = (k: string) => place?.stats.find(([n]) => n.startsWith(k))?.[1]
   const val = (v: ViewId) => { const a = ans[v]; return a?.status === 'ok' ? (v === 'height' ? a.value : [a.value, a.counts?.replace(/ in view$/, '')].filter(Boolean).join(' ')) : a?.status === 'zoom' ? 'Zoom in' : a?.status === 'outside' || a?.status === 'empty' ? 'None here' : a?.status === 'error' ? 'Unavailable' : '…' }
   const power = stat('Power price')
+  const [sw, setSw] = useState<string>()
+  useEffect(() => { spaceWeather().then(r => r.data && setSw(`Kp ${r.data.kp}, ${kpWord(r.data.kp)}`)) }, [])
   // earthquakes in view plus every country feed counted in view (incidents, roadworks, fires); zoomed out it is the world's quakes
   const events = () => { const a = ans.hazards; if (!a || a.status === 'loading') return undefined; if (a.status === 'error') return 'Unavailable'
     const q = a.counts?.includes('worldwide') ? 0 : +(a.value || '0').replace(/,/g, ''); return a.counts?.includes('worldwide') ? `${a.value} quakes worldwide` : `${(q + (a.inView || 0)).toLocaleString('en')}` }
@@ -482,6 +486,7 @@ function Sim({ s, setS, theme, view, ans, pick, clearPick, choose, fly }: {
     ['ph:train', 'Transit', val('transit'), 'transit'],
     ['ph:airplane-takeoff', 'Nearest big airport', stat('Airports nearby'), 'airports'],
     ...(power ? [['ph:lightning', 'Power now', power.split(',')[0]] as [string, string, string]] : []),
+    ['ph:sun', 'Space weather', sw, 'satellites'],
   ]
   const next = theme === 'dark' ? 'light' : 'dark'
   return (
@@ -570,23 +575,31 @@ function InfoPanel({ s, setS, view, a, close }: { s: S; setS: (f: (x: S) => S) =
 
 // Chirper-style feed: the newest real events (USGS earthquakes, GDACS alerts, NASA EONET), one bubble; open it for the list.
 function Feed({ fly }: { fly: (c: { center: [number, number]; zoom: number }) => void }) {
-  type Item = { id: string; text: string; t: number; c: [number, number]; src: string }
+  type Item = { id: string; text: string; t: number; c?: [number, number]; src: string }   // c: none for global news (space weather)
   const [items, setItems] = useState<Item[]>([])
   const [open, setOpen] = useState(false)
   useEffect(() => {
     let live = true
-    Promise.all([D.quakes('day'), D.gdacs(), D.eonet()]).then(([q, g, e]) => {
+    Promise.all([D.quakes('day'), D.gdacs(), D.eonet(), swpcAlerts(), hkTraffic(), hkWarnings(), hkPress()]).then(([q, g, e, a, hk, hw, hp]) => {
       const out: Item[] = []
       for (const f of q.data?.features || []) if (f.properties.mag >= 4.5) out.push({ id: f.id, text: `M${f.properties.mag.toFixed(1)} earthquake, ${f.properties.place}`, t: f.properties.time, c: f.geometry.coordinates.slice(0, 2), src: 'USGS' })
       for (const f of (g.data as any)?.features || []) out.push({ id: 'g' + f.properties.eventid, text: `${f.properties.alertlevel} alert: ${f.properties.name || f.properties.eventname}`, t: Date.parse(f.properties.fromdate), c: f.geometry.coordinates, src: 'GDACS' })
       for (const f of (e.data as any)?.features || []) out.push({ id: 'e' + f.properties.id, text: f.properties.title, t: Date.parse(f.properties.date), c: f.geometry.coordinates, src: 'NASA EONET' })
-      if (live) setItems(out.filter(i => Number.isFinite(i.t)).sort((a, b) => b.t - a.t).slice(0, 12))
+      for (const x of (a.data || []).slice(0, 4)) out.push({ ...x, src: 'NOAA SWPC' })
+      for (const x of hw.data || []) out.push({ ...x, src: 'Hong Kong Observatory' })
+      for (const x of (hp.data || []).slice(0, 4)) out.push({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c, src: 'HKSAR Government press release' })
+      for (const x of hk.data || []) out.push({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c || HK_CENTRE, src: 'Transport Department' })
+      const top = out.filter(i => Number.isFinite(i.t)).sort((a, b) => b.t - a.t).slice(0, 12)
+      // one place kept for the newest space-weather alert of the last two days, so earthquakes do not push it out
+      const sw = out.filter(i => i.src === 'NOAA SWPC' && Date.now() - i.t < 48 * 3600e3).sort((a, b) => b.t - a.t)[0]
+      if (sw && !top.includes(sw)) top.splice(top.length - 1, 1, sw)
+      if (live) setItems(top.sort((a, b) => b.t - a.t))
     }).catch(err => console.error('feed failed', err))
     return () => { live = false }
   }, [])
   const ago = (t: number) => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago` }
   if (!items.length) return null
-  const go = (i: Item) => fly({ center: i.c, zoom: 7 })
+  const go = (i: Item) => i.c && fly({ center: i.c, zoom: 7 })
   return (
     <aside className={`float cs-feed${open ? ' open' : ''}`} aria-label="News feed">
       <button className="cs-feed-head" aria-expanded={open} onClick={() => setOpen(o => !o)}>

@@ -369,6 +369,8 @@ export class World {
       const tr = iss ? Sat.track(iss.rec) : { past: [], next: [] }
       ;(m.getSource('iss-past') as any)?.setData({ type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: tr.past } })
       ;(m.getSource('iss-next') as any)?.setData({ type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: tr.next } })
+      // Orbit rings in 3D for the small groups (a ring per satellite; thousands of Starlink rings would hide the globe)
+      this.marks.orbits = this.sats.length > 500 ? [] : this.sats.map((s, i) => ({ i, pts: Sat.orbit(s.rec, t) }))
     }
     this.satMs = performance.now() - t0
   }
