@@ -7,6 +7,7 @@ import { ADELAIDE, HEIGHT_STOPS, HK, INDICATORS_NOTE, MAG_STOPS, RAMPS, VIEWS, i
 import { AADT_STOPS, DENSITY_STOPS, LOCAL, cellsFor, firstXY, meets, type Bbox } from './local'
 import type { LegendSpec } from './legend'
 import { FIRE, FIRE_MINZOOM, FIRE_MODES, SA_BOX, drawable, fireLegend } from './fire'
+import { HKR_BOX, HKR_RULES, hkRoadLegend } from './hk-roads'
 
 export type Answer = {
   status: 'loading' | 'ok' | 'empty' | 'error' | 'outside' | 'zoom'
@@ -274,6 +275,27 @@ async function base(w: World, v: ViewId): Promise<Answer> {
   }
   if (v === 'traffic') {
     const sub = w.state.sub.traffic || 'all', V = RAMPS.viridis[th]
+    // Hong Kong: road rules from TD's Road Network (the 'Road rules (Hong Kong)' map, or 'all' over Hong Kong)
+    const box: Bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+    if (sub === 'hkroads' || (sub === 'all' && meets(box, HKR_BOX) && !meets(box, [129, -38.2, 141.1, -25.9]))) {
+      const legend: LegendSpec = { kind: 'items', title: 'Road rules (Transport Department)', items: hkRoadLegend() }
+      const base = { legend, updated: 'TD Road Network (2nd generation), via AlreadyOpen hk-roads, rebuilt weekly' }
+      if (!meets(box, HKR_BOX)) return { ...base, status: 'outside', detail: 'Road rules are mapped for Hong Kong, from its Transport Department.', jump: { label: 'Go to Hong Kong', center: [114.17, 22.3], zoom: 15 } }
+      if (z < 12) return { ...base, status: 'empty', detail: 'Zoom in to city level to see speed limits and bus lanes; turning bans, no-stopping lines and signs appear from street level, parking a little closer.' }
+      if (!m.areTilesLoaded()) await Promise.race([m.once('idle'), new Promise(r => setTimeout(r, 4000))])
+      const on = HKR_RULES.filter(id => m.getLayer(id) && m.getLayoutProperty(id, 'visibility') === 'visible' && id !== 'hr-centre' && id !== 'hr-oneway')
+      const seen = new Map<string, Set<string>>()
+      for (const f of on.length ? m.queryRenderedFeatures({ layers: on }) : []) {
+        const k = f.layer.id; if (!seen.has(k)) seen.set(k, new Set())
+        seen.get(k)!.add(JSON.stringify(f.properties))   // a feature split across tiles counts once
+      }
+      const n = (id: string) => seen.get(id)?.size || 0, total = [...seen.values()].reduce((a, x) => a + x.size, 0)
+      const parts = [['hr-speed', 'speed limit sections'], ['hr-bus', 'bus-only lanes'], ['hr-nsr', 'no-stopping restrictions'], ['hr-turn', 'restricted turns'],
+        ['hr-proh', 'prohibition signs'], ['hr-vr', 'vehicle limits'], ['hr-tf', 'crossings, yellow boxes, tolls and dead ends'], ['hr-park', 'on-street parking places']]
+        .filter(([id]) => n(id)).map(([id, label]) => `${nf.format(n(id))} ${label}`)
+      return { ...base, status: total ? 'ok' : 'empty', value: nf.format(total), counts: 'road rules drawn in view',
+        detail: parts.length ? `${parts.join(', ')}.${z < 14 ? ' Turning bans, no-stopping lines and signs appear from street level.' : ''}` : 'None drawn here yet.' }
+    }
     const legend: LegendSpec = sub === 'crashes' ? { kind: 'items', title: 'Crash locations, worst crash at each', items: [] }
       : { kind: 'ramp', title: 'Vehicles per day (AADT estimate)', colors: V, ticks: AADT_STOPS.map((x, i) => i === AADT_STOPS.length - 1 ? `${nf.format(x)}+` : nf.format(x)), note: 'Thicker lines carry more traffic. Crash locations appear from suburb zoom.' }
     if (!meets([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], [129, -38.2, 141.1, -25.9]))

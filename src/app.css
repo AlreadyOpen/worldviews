@@ -123,6 +123,8 @@ button, input, select { font: inherit; color: inherit }
 .card h2 { margin: 0; font-size: 1.125rem; font-weight: 650 }
 .subpick { display: block; margin: 0 0 var(--s2) }
 .subpick select { width: 100%; font-size: 0.8125rem; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--ink) }
+.hl-toggle { display: block; width: 100%; margin: 0 0 var(--s2); font-size: 0.8125rem; padding: 5px 8px; text-align: left; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--ink); cursor: pointer }
+.hl-toggle[aria-pressed="true"] { border-color: #E69F00; box-shadow: inset 3px 0 0 #E69F00 }
 .card .sub { font-size: 0.75rem; color: var(--ink-2); margin: 0 0 var(--s3) }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3) var(--s4); margin: 0 }
 .stats div { min-width: 0 }

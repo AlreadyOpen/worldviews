@@ -31,8 +31,8 @@ const OPTIONS = {
   theme: { label: 'Theme', values: { system: 'Follow the system', light: 'Light', dark: 'Dark' } },
   names: { label: 'View names', values: { question: 'Questions', noun: 'Nouns' } },
 } as const
-type S = { ui: string; feed: string; marks: string; switch: string; panel: string; time: string; theme: string; names: string; view: ViewId | ''; on: ViewId[]; sub: Partial<Record<ViewId, string>>; b: ViewId; hour: number; day: number; fire: FireMode }
-const DEFAULT: S = { ui: 'catalog', feed: 'on', marks: 'three', switch: 'v3', panel: 'p2', time: 't1', theme: 'system', names: 'question', view: 'height', on: ['height'], sub: {}, b: 'hazards', hour: 24, day: 30, fire: FIRE_DEFAULT }
+type S = { ui: string; feed: string; marks: string; switch: string; panel: string; time: string; theme: string; names: string; view: ViewId | ''; on: ViewId[]; sub: Partial<Record<ViewId, string>>; b: ViewId; hour: number; day: number; fire: FireMode; hl: boolean }
+const DEFAULT: S = { ui: 'catalog', feed: 'on', marks: 'three', switch: 'v3', panel: 'p2', time: 't1', theme: 'system', names: 'question', view: 'height', on: ['height'], sub: {}, b: 'hazards', hour: 24, day: 30, fire: FIRE_DEFAULT, hl: false }
 const WORLD = { center: [96, 20] as [number, number], zoom: 1.85, pitch: 0, bearing: 0 }
 const isView = (v: any): v is ViewId => VIEW_IDS.includes(v)
 // Read once at load: the URL is rewritten from state right after, and `at` (camera) is not part of state.
@@ -51,6 +51,7 @@ function parse(q: URLSearchParams, base: S = DEFAULT): S {
   if (q.has('hour')) s.hour = Math.max(0, Math.min(24, +q.get('hour')!))
   if (q.has('day')) s.day = Math.max(0, Math.min(30, +q.get('day')!))
   if (isFireMode(q.get('fire'))) s.fire = q.get('fire') as FireMode
+  if (q.get('hl') === 'on') s.hl = true
   return s
 }
 function serialise(s: S) {
@@ -63,12 +64,13 @@ function serialise(s: S) {
   if (s.time === 't2') q.set('hour', String(s.hour))
   if (s.time === 't3') q.set('day', String(s.day))
   if (s.fire !== FIRE_DEFAULT) q.set('fire', s.fire)
+  if (s.hl) q.set('hl', 'on')
   return q.toString()
 }
 const name = (v: ViewId, s: S) => (s.names === 'noun' ? VIEWS[v].noun : VIEWS[v].question)
 const engineState = (s: S, side: 'a' | 'b') => ({
   views: side === 'b' ? [s.b] : s.switch === 'v2' ? s.on : s.view ? [s.view] : [],
-  base: !['v1', 'v2'].includes(s.switch), sub: s.sub, time: s.time as any, hour: s.hour, day: s.day, fire: s.fire, marks: s.marks as any,
+  base: !['v1', 'v2'].includes(s.switch), sub: s.sub, time: s.time as any, hour: s.hour, day: s.day, fire: s.fire, marks: s.marks as any, hl: s.hl,
 })
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 const systemDark = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
@@ -388,6 +390,11 @@ function AnswerPanel({ s, setS, view, a, all, pick, clearPick, jump, collapsed, 
           </select>
         </label>
       )}
+      {view === 'hazards' && ['all', 'roads'].includes(s.sub.hazards || 'all') && (
+        <button type="button" className="hl-toggle" aria-pressed={s.hl} onClick={() => setS(x => ({ ...x, hl: !x.hl }))}>
+          {s.hl ? 'Hide' : 'Highlight'} whole roads named in Hong Kong traffic alerts
+        </button>
+      )}
       <div aria-live="polite">
         {!a || a.status === 'loading' ? <><div className="sk-line" aria-hidden="true" /><div className="sk-line small" aria-hidden="true" /><span className="sr">Loading</span></>
           : a.status === 'error' ? <p className="note warn">Could not load this view. {a.errors?.join('. ')}. Try again in a minute.</p>
@@ -555,6 +562,11 @@ function InfoPanel({ s, setS, view, a, close }: { s: S; setS: (f: (x: S) => S) =
             {FIRE_MODES.map(([k, label]) => <option key={k} value={k}>Fire: {label}</option>)}
           </select>
         </label>
+      )}
+      {view === 'hazards' && ['all', 'roads'].includes(s.sub.hazards || 'all') && (
+        <button type="button" className="hl-toggle" aria-pressed={s.hl} onClick={() => setS(x => ({ ...x, hl: !x.hl }))}>
+          {s.hl ? 'Hide' : 'Highlight'} whole roads named in Hong Kong traffic alerts
+        </button>
       )}
       <div aria-live="polite">
         {!a || a.status === 'loading' ? <div className="sk-line" aria-hidden="true" />

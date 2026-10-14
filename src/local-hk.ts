@@ -33,8 +33,11 @@ const where = (q: string) => once('hk-loc:' + q, async () => {
 // (v1: text only), which also carries MTR and ferry notices (14 Oct 2026: "Kwun Tong Line trains will not stop at Lam Tin
 // Station" was in v1 only). Same English text in both = one message.
 const PLACE = /((?:[A-Z][\w'.]*\s)+(?:Road|Street|Link|Tunnel|Highway|Bridge|Avenue|Station|Interchange|Bypass|Corridor|Pier|Terminal|Drive|Lane|Path|Flyover|Crossing|Hospital|Centre))\b/
+// Road names in a message, upper case as TD's Road Network spells them (for the whole-road highlight)
+const ROAD = /((?:[A-Z][\w'.]*\s)+(?:Road|Street|Link|Tunnel|Highway|Bridge|Avenue|Interchange|Bypass|Corridor|Drive|Lane|Path|Flyover|Crossing))\b/g
+const roadsIn = (...texts: string[]) => [...new Set(texts.flatMap(t => [...(t || '').matchAll(ROAD)].map(m => m[1].trim().toUpperCase())))]
 const XT = (e: Element, k: string) => e.getElementsByTagName(k)[0]?.textContent?.trim() || ''
-export type HkMsg = { id: string; text: string; t: number; title: string; loc: string; c?: [number, number]; at?: [number, number][]; guessed?: boolean; status: string; feed: string }   // at: every pier of a ferry notice
+export type HkMsg = { id: string; text: string; t: number; title: string; loc: string; roads: string[]; c?: [number, number]; at?: [number, number][]; guessed?: boolean; status: string; feed: string }   // at: every pier of a ferry notice
 export const hkTraffic = () => once('hk-stn', async () => {
   const get = async (u: string) => { const r = await fetch(u); if (!r.ok) throw new Error(`${new URL(u).host} answered ${r.status}`); return new DOMParser().parseFromString(await r.text(), 'text/xml') }
   const [v2, v1] = await Promise.all([get('https://www.td.gov.hk/en/special_news/trafficnews.xml'), get('https://resource.data.one.gov.hk/td/en/specialtrafficnews.xml').catch(() => null)])
@@ -42,7 +45,7 @@ export const hkTraffic = () => once('hk-stn', async () => {
   for (const m of Array.from(v2.getElementsByTagName('message'))) {
     const lat = +XT(m, 'LATITUDE'), lon = +XT(m, 'LONGITUDE'), loc = [XT(m, 'LOCATION_EN'), XT(m, 'DIRECTION_EN') && `(${XT(m, 'DIRECTION_EN')} bound)`, XT(m, 'NEAR_LANDMARK_EN') && `near ${XT(m, 'NEAR_LANDMARK_EN')}`].filter(Boolean).join(' ')
     out.push({ id: 'td2-' + XT(m, 'INCIDENT_NUMBER'), text: XT(m, 'CONTENT_EN'), t: Date.parse(XT(m, 'ANNOUNCEMENT_DATE') + '+08:00'), title: XT(m, 'INCIDENT_HEADING_EN') || 'Traffic news',
-      loc, status: XT(m, 'INCIDENT_STATUS_EN'), feed: 'TD Special Traffic News (2nd generation)',
+      loc, roads: roadsIn(XT(m, 'LOCATION_EN'), XT(m, 'CONTENT_EN')), status: XT(m, 'INCIDENT_STATUS_EN'), feed: 'TD Special Traffic News (2nd generation)',
       c: lat && lon ? [lon, lat] : (await where(XT(m, 'NEAR_LANDMARK_EN')) || await where(XT(m, 'LOCATION_EN'))) || undefined })
   }
   for (const m of v1 ? Array.from(v1.getElementsByTagName('message')) : []) {
@@ -53,7 +56,7 @@ export const hkTraffic = () => once('hk-stn', async () => {
     const t = y ? Date.parse(`${y}-${mo.padStart(2, '0')}-${dd.padStart(2, '0')}T${String((+h % 12) + (ap === '下午' ? 12 : 0)).padStart(2, '0')}:${mi}:${se}+08:00`) : Date.now()
     const place = text.match(PLACE)?.[1], piers = /ferry/i.test(text) ? await ferryPiers(text) : []
     out.push({ id: 'td1-' + XT(m, 'msgID'), text, t, title: /\b\w+ Line trains?\b|\bStation is closed\b|\bMTR shuttle\b/i.test(text) ? 'MTR service' : /ferry/i.test(text) ? 'Ferry service' : 'Traffic news',
-      status: XT(m, 'CurrentStatus') === '3' ? 'Update' : 'New', feed: 'TD Special Traffic News', guessed: !piers.length && !!place,
+      status: XT(m, 'CurrentStatus') === '3' ? 'Update' : 'New', feed: 'TD Special Traffic News', guessed: !piers.length && !!place, roads: piers.length ? [] : roadsIn(text),
       loc: piers.length ? piers.map(p => p.name).join('; ') : place || '', c: piers[0]?.c || (place && await where(place)) || undefined, at: piers.length ? piers.map(p => p.c) : undefined })
   }
   return out

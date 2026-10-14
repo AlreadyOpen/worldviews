@@ -11,13 +11,15 @@ import { FIRE, FIRE_LINKS, FIRE_MINZOOM, SA_BOX, drawable, fireLayers, fireRows,
 
 let protocol = false
 export type Theme = 'light' | 'dark'
-export type EngineState = { views: ViewId[]; base: boolean; sub: Partial<Record<ViewId, string>>; time: 't1' | 't2' | 't3'; hour: number; day: number; fire: FireMode; marks?: MarksMode }
+export type EngineState = { views: ViewId[]; base: boolean; sub: Partial<Record<ViewId, string>>; time: 't1' | 't2' | 't3'; hour: number; day: number; fire: FireMode; marks?: MarksMode; hl?: boolean }   // hl: whole-road highlight of the TD alerts
 export type Pick = { view: ViewId; title: string; rows: [string, string][]; href?: string; source: string; links?: [string, string][] }
 
 const STYLE = { light: 'https://tiles.openfreemap.org/styles/positron', dark: 'https://tiles.openfreemap.org/styles/dark' }
 // Attribution per world-buildings region source.
 const BLD_ATTR: Record<string, string> = { hk: 'Lands Department via CSDI (AlreadyOpen hk-buildings)', '3dbag': '© 3DBAG by tudelft3d and 3DGI (CC BY 4.0)' }
 import { HK_OVERTURE_IDS } from './hk-area'
+import { HKR_HL, HKR_RULES, HKR_SRC, HKR_TILES, hkAlertRoadLayer, hkRoadLayers, hkRoadPick } from './hk-roads'
+import { hkTraffic, type HkMsg } from './local-hk'
 // Overture also carries 577 Hong Kong buildings and parts (OpenStreetMap); there the CSDI region draws instead (Helen 2026-10-11).
 const NOT_HK: any = ['!', ['in', ['get', 'id'], ['literal', HK_OVERTURE_IDS]]]
 const BLD_OVERTURE = 'Overture Maps (ODbL), © OpenStreetMap contributors via AlreadyOpen world-buildings'
@@ -206,6 +208,13 @@ export class World {
         if (!LAYERS[L.view].includes(spec.id)) LAYERS[L.view].push(spec.id)
       }
     }
+    // Hong Kong road rules (TD Road Network via hk-roads) for the traffic view, and the alerts' whole-road highlight
+    m.addSource(HKR_SRC, { type: 'vector', url: HKR_TILES, attribution: 'Transport Department, Road Network (DATA.GOV.HK)' } as any)
+    for (const spec of [...hkRoadLayers(dark), hkAlertRoadLayer()]) {
+      m.addLayer({ ...spec, layout: { ...((spec as any).layout || {}), visibility: 'none' } } as any, spec.type === 'line' ? 'z-eonet' : undefined)
+      const v = spec.id === HKR_HL ? 'hazards' : 'traffic'
+      if (!LAYERS[v].includes(spec.id)) LAYERS[v].push(spec.id)
+    }
     this.apply(this.state, true)
   }
 
@@ -254,6 +263,16 @@ export class World {
     for (const L of LOCAL) if (L.cat) {
       const sub = s.sub[L.view] || 'all', on = s.views.includes(L.view) && (sub === 'all' || sub === L.cat)
       for (const id of LAYERS[L.view]) if (layerOwner(id) === L && m.getLayer(id)) m.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none')
+    }
+    // HK road rules: the traffic view's 'Road rules (Hong Kong)' and 'all' maps; the alert roads: hazards roads map, toggle on
+    const tr = s.sub.traffic || 'all'
+    for (const id of HKR_RULES) if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', s.views.includes('traffic') && (tr === 'all' || tr === 'hkroads') ? 'visible' : 'none')
+    const hlOn = !!s.hl && s.views.includes('hazards') && (zs === 'all' || zs === 'roads')
+    if (m.getLayer(HKR_HL)) {
+      const msgs = D.peek<HkMsg[]>('hk-stn')
+      if (hlOn && !msgs) hkTraffic().then(() => this.installed && this.filters())
+      m.setFilter(HKR_HL, ['in', ['get', 'STREET_ENAME'], ['literal', [...new Set((msgs?.data || []).flatMap(x => x.roads))]]])
+      m.setLayoutProperty(HKR_HL, 'visibility', hlOn ? 'visible' : 'none')
     }
     for (const id of LAYERS.hazards) if (id.startsWith('f-') && m.getLayer(id)) m.setLayoutProperty(id, 'visibility', this.fireWanted() !== 'off' ? 'visible' : 'none')
   }
@@ -560,6 +579,9 @@ export class World {
     if (id.startsWith('f-')) { const F = FIRE.find(x => id.startsWith(`f-${x.id}-`))!
       return this.onPick?.({ view: 'hazards', title: F.name, rows: fireRows(p), href: F.docs, source: `${F.owner} via AlreadyOpen sa-fire. ${F.licence}` }) }
     const fmt = (t: any) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    if (id.startsWith('hr-')) { const r = hkRoadPick(id, p)
+      if (r) return this.onPick?.({ view: id === HKR_HL ? 'hazards' : 'traffic', ...r, href: 'https://huggingface.co/datasets/alreadyopen/hk-roads',
+        source: 'Transport Department, Road Network (2nd generation), via AlreadyOpen hk-roads. DATA.GOV.HK terms' }) }
     const L = layerOwner(id)
     if (L) { const r = L.pick(p)
       return this.onPick?.({ view: L.view, title: r.title, rows: r.rows, href: r.href || L.href, source: `${L.name}. ${L.licence}`, links: r.href && r.href !== L.href ? [['Source', L.href]] : undefined }) }
