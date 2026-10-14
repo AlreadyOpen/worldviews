@@ -596,21 +596,24 @@ function Feed({ fly, allPress, setAllPress }: { fly: (c: { center: [number, numb
   const [press, setPress] = useState<{ id: string; text: string; t: number; href: string }[]>([])
   useEffect(() => {
     let live = true
-    Promise.all([D.quakes('day'), D.gdacs(), D.eonet(), swpcAlerts(), hkTraffic(), hkWarnings(), hkPress()]).then(([q, g, e, a, hk, hw, hp]) => {
-      const out: Item[] = []
-      for (const f of q.data?.features || []) if (f.properties.mag >= 4.5) out.push({ id: f.id, text: `M${f.properties.mag.toFixed(1)} earthquake, ${f.properties.place}`, t: f.properties.time, c: f.geometry.coordinates.slice(0, 2), src: 'USGS' })
-      for (const f of (g.data as any)?.features || []) out.push({ id: 'g' + f.properties.eventid, text: `${f.properties.alertlevel} alert: ${f.properties.name || f.properties.eventname}`, t: Date.parse(f.properties.fromdate), c: f.geometry.coordinates, src: 'GDACS' })
-      for (const f of (e.data as any)?.features || []) out.push({ id: 'e' + f.properties.id, text: f.properties.title, t: Date.parse(f.properties.date), c: f.geometry.coordinates, src: 'NASA EONET' })
-      for (const x of (a.data || []).slice(0, 4)) out.push({ ...x, src: 'NOAA SWPC' })
-      for (const x of hw.data || []) out.push({ ...x, src: 'Hong Kong Observatory' })
-      for (const x of (hp.data?.notices || []).slice(0, 4)) out.push({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c, src: 'HKSAR Government press release' })
-      for (const x of hk.data || []) out.push({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c || HK_CENTRE, src: 'Transport Department' })
+    // each source shows as soon as it arrives, so a slow or failed one does not hold back the rest
+    const got: Record<string, Item[]> = {}
+    const show = () => {
+      const out = Object.values(got).flat()
       const top = out.filter(i => Number.isFinite(i.t)).sort((a, b) => b.t - a.t).slice(0, 12)
       // one place kept for the newest space-weather alert of the last two days, so earthquakes do not push it out
       const sw = out.filter(i => i.src === 'NOAA SWPC' && Date.now() - i.t < 48 * 3600e3).sort((a, b) => b.t - a.t)[0]
       if (sw && !top.includes(sw)) top.splice(top.length - 1, 1, sw)
-      if (live) { setItems(top.sort((a, b) => b.t - a.t)); setPress(hp.data?.all || []) }
-    }).catch(err => console.error('feed failed', err))
+      setItems(top.sort((a, b) => b.t - a.t))
+    }
+    const add = <T,>(key: string, p: Promise<T>, f: (d: T) => Item[]) => p.then(d => { if (live) { got[key] = f(d); show() } }).catch(err => console.error(`feed: ${key} failed`, err))
+    add('usgs', D.quakes('day'), q => (q.data?.features || []).filter((f: any) => f.properties.mag >= 4.5).map((f: any) => ({ id: f.id, text: `M${f.properties.mag.toFixed(1)} earthquake, ${f.properties.place}`, t: f.properties.time, c: f.geometry.coordinates.slice(0, 2), src: 'USGS' })))
+    add('gdacs', D.gdacs(), g => ((g?.data as any)?.features || []).map((f: any) => ({ id: 'g' + f.properties.eventid, text: `${f.properties.alertlevel} alert: ${f.properties.name || f.properties.eventname}`, t: Date.parse(f.properties.fromdate), c: f.geometry.coordinates, src: 'GDACS' })))
+    add('eonet', D.eonet(), e => ((e?.data as any)?.features || []).map((f: any) => ({ id: 'e' + f.properties.id, text: f.properties.title, t: Date.parse(f.properties.date), c: f.geometry.coordinates, src: 'NASA EONET' })))
+    add('swpc', swpcAlerts(), a => (a.data || []).slice(0, 4).map(x => ({ ...x, src: 'NOAA SWPC' })))
+    add('hko', hkWarnings(), hw => (hw.data || []).map(x => ({ ...x, src: 'Hong Kong Observatory' })))
+    add('press', hkPress(), hp => { setPress(hp.data?.all || []); return (hp.data?.notices || []).slice(0, 4).map(x => ({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c, src: 'HKSAR Government press release' })) })
+    add('td', hkTraffic(), hk => (hk.data || []).map(x => ({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c || HK_CENTRE, src: 'Transport Department' })))
     return () => { live = false }
   }, [])
   const ago = (t: number) => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago` }
