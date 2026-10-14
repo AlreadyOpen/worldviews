@@ -17,6 +17,9 @@ import * as Sat from './sats'
 import { aemo, auState, NEM_REGION } from './local'
 import { spaceWeather, swpcAlerts, kpWord } from './local-space'
 import { hkTraffic, hkWarnings, hkPress, HK_CENTRE } from './local-hk'
+import { hkRoadworks } from './hk-live'
+import { Driver, type Vehicle } from './drive'
+import type maplibregl from 'maplibre-gl'
 import { HK, SOURCES, VIEWS, VIEW_IDS, type ViewId } from './views'
 import { FIRE_DEFAULT, FIRE_MODES, isFireMode, type FireMode } from './fire'
 
@@ -31,8 +34,8 @@ const OPTIONS = {
   theme: { label: 'Theme', values: { system: 'Follow the system', light: 'Light', dark: 'Dark' } },
   names: { label: 'View names', values: { question: 'Questions', noun: 'Nouns' } },
 } as const
-type S = { ui: string; feed: string; marks: string; switch: string; panel: string; time: string; theme: string; names: string; view: ViewId | ''; on: ViewId[]; sub: Partial<Record<ViewId, string>>; b: ViewId; hour: number; day: number; fire: FireMode; hl: boolean; press: boolean }
-const DEFAULT: S = { ui: 'catalog', feed: 'on', marks: 'three', switch: 'v3', panel: 'p2', time: 't1', theme: 'system', names: 'question', view: 'height', on: ['height'], sub: {}, b: 'hazards', hour: 24, day: 30, fire: FIRE_DEFAULT, hl: false, press: false }
+type S = { ui: string; feed: string; marks: string; switch: string; panel: string; time: string; theme: string; names: string; view: ViewId | ''; on: ViewId[]; sub: Partial<Record<ViewId, string>>; b: ViewId; hour: number; day: number; fire: FireMode; hl: boolean; press: boolean; gen: boolean }
+const DEFAULT: S = { ui: 'catalog', feed: 'on', marks: 'three', switch: 'v3', panel: 'p2', time: 't1', theme: 'system', names: 'question', view: 'height', on: ['height'], sub: {}, b: 'hazards', hour: 24, day: 30, fire: FIRE_DEFAULT, hl: false, press: false, gen: false }
 const WORLD = { center: [96, 20] as [number, number], zoom: 1.85, pitch: 0, bearing: 0 }
 const isView = (v: any): v is ViewId => VIEW_IDS.includes(v)
 // Read once at load: the URL is rewritten from state right after, and `at` (camera) is not part of state.
@@ -52,6 +55,7 @@ function parse(q: URLSearchParams, base: S = DEFAULT): S {
   if (q.has('day')) s.day = Math.max(0, Math.min(30, +q.get('day')!))
   if (isFireMode(q.get('fire'))) s.fire = q.get('fire') as FireMode
   if (q.get('hl') === 'on') s.hl = true
+  if (q.get('gen') === 'on') s.gen = true
   if (q.get('press') === 'all') s.press = true
   return s
 }
@@ -66,13 +70,14 @@ function serialise(s: S) {
   if (s.time === 't3') q.set('day', String(s.day))
   if (s.fire !== FIRE_DEFAULT) q.set('fire', s.fire)
   if (s.hl) q.set('hl', 'on')
+  if (s.gen) q.set('gen', 'on')
   if (s.press) q.set('press', 'all')
   return q.toString()
 }
 const name = (v: ViewId, s: S) => (s.names === 'noun' ? VIEWS[v].noun : VIEWS[v].question)
 const engineState = (s: S, side: 'a' | 'b') => ({
   views: side === 'b' ? [s.b] : s.switch === 'v2' ? s.on : s.view ? [s.view] : [],
-  base: !['v1', 'v2'].includes(s.switch), sub: s.sub, time: s.time as any, hour: s.hour, day: s.day, fire: s.fire, marks: s.marks as any, hl: s.hl,
+  base: !['v1', 'v2'].includes(s.switch), sub: s.sub, time: s.time as any, hour: s.hour, day: s.day, fire: s.fire, marks: s.marks as any, hl: s.hl, gen: s.gen,
 })
 const reduced = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 const systemDark = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
@@ -220,7 +225,7 @@ export function App({ sim = false }: { sim?: boolean }) {
         collapsed={collapsed} toggle={() => setCollapsed(c => !c)} card={s.panel !== 'p1' ? <CityCard s={s} ans={ans} choose={choose} inside /> : null} />
 
       </> : <Sim s={s} setS={setS} theme={theme} view={active} ans={ans} pick={pick} clearPick={() => setPick(null)} choose={choose}
-        fly={c => wA.current?.map.flyTo({ ...c, duration: reduced() ? 0 : 2500 })} />}
+        fly={c => wA.current?.map.flyTo({ ...c, duration: reduced() ? 0 : 2500 })} map={() => wA.current?.map} />}
 
       {flightShown && <div className="float fly" role="status">Flying to Hong Kong<button className="icon-btn" aria-label="Skip the flight" onClick={() => { wA.current?.map.stop(); wA.current?.map.jumpTo(HK) }}><iconify-icon icon="ph:x" /></button></div>}
       {grid && <AllMaps s={s} w={wA.current!} choose={v => { choose(v); setGrid(false) }} close={() => setGrid(false)} />}
@@ -397,6 +402,11 @@ function AnswerPanel({ s, setS, view, a, all, pick, clearPick, jump, collapsed, 
           {s.hl ? 'Hide' : 'Highlight'} whole roads named in Hong Kong traffic alerts
         </button>
       )}
+      {view === 'height' && (
+        <button type="button" className="hl-toggle" aria-pressed={s.gen} onClick={() => setS(x => ({ ...x, gen: !x.gen }))}>
+          {s.gen ? 'Hide' : 'Fill'} the gaps: OpenStreetMap buildings missing here, then generated guesses (not surveyed)
+        </button>
+      )}
       <div aria-live="polite">
         {!a || a.status === 'loading' ? <><div className="sk-line" aria-hidden="true" /><div className="sk-line small" aria-hidden="true" /><span className="sr">Loading</span></>
           : a.status === 'error' ? <p className="note warn">Could not load this view. {a.errors?.join('. ')}. Try again in a minute.</p>
@@ -475,9 +485,10 @@ const CITIES: [string, { center: [number, number]; zoom: number; pitch?: number;
   ['Taipei', { center: [121.5654, 25.033], zoom: 12.5 }], ['Rotterdam', { center: [4.48, 51.92], zoom: 13.5, pitch: 55 }],
   ['New York', { center: [-73.99, 40.73], zoom: 13, pitch: 55 }], ['The world', WORLD]]
 
-function Sim({ s, setS, theme, view, ans, pick, clearPick, choose, fly }: {
+function Sim({ s, setS, theme, view, ans, pick, clearPick, choose, fly, map }: {
   s: S; setS: (f: (x: S) => S) => void; theme: Theme; view: ViewId | ''; ans: Partial<Record<string, Answer>>
   pick: Pick | null; clearPick: () => void; choose: (v: ViewId) => void; fly: (c: { center: [number, number]; zoom: number }) => void
+  map: () => maplibregl.Map | undefined
 }) {
   const place = usePlace(s)
   const stat = (k: string) => place?.stats.find(([n]) => n.startsWith(k))?.[1]
@@ -534,6 +545,7 @@ function Sim({ s, setS, theme, view, ans, pick, clearPick, choose, fly }: {
       {view && <InfoPanel s={s} setS={setS} view={view} a={ans[view]} close={() => setS(x => ({ ...x, view: '', on: [] }))} />}
       {pick && <PickCard pick={pick} clear={clearPick} cls="float cs-pick" />}
       {s.feed === 'on' && <Feed fly={fly} allPress={s.press} setAllPress={v => setS(x => ({ ...x, press: v }))} />}
+      <Drive map={map} />
     </div>
   )
 }
@@ -568,6 +580,11 @@ function InfoPanel({ s, setS, view, a, close }: { s: S; setS: (f: (x: S) => S) =
       {view === 'hazards' && ['all', 'roads'].includes(s.sub.hazards || 'all') && (
         <button type="button" className="hl-toggle" aria-pressed={s.hl} onClick={() => setS(x => ({ ...x, hl: !x.hl }))}>
           {s.hl ? 'Hide' : 'Highlight'} whole roads named in Hong Kong traffic alerts
+        </button>
+      )}
+      {view === 'height' && (
+        <button type="button" className="hl-toggle" aria-pressed={s.gen} onClick={() => setS(x => ({ ...x, gen: !x.gen }))}>
+          {s.gen ? 'Hide' : 'Fill'} the gaps: OpenStreetMap buildings missing here, then generated guesses (not surveyed)
         </button>
       )}
       <div aria-live="polite">
@@ -613,6 +630,11 @@ function Feed({ fly, allPress, setAllPress }: { fly: (c: { center: [number, numb
     add('swpc', swpcAlerts(), a => (a.data || []).slice(0, 4).map(x => ({ ...x, src: 'NOAA SWPC' })))
     add('hko', hkWarnings(), hw => (hw.data || []).map(x => ({ ...x, src: 'Hong Kong Observatory' })))
     add('press', hkPress(), hp => { setPress(hp.data?.all || []); return (hp.data?.notices || []).slice(0, 4).map(x => ({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c, src: 'HKSAR Government press release' })) })
+    // roadworks: in progress at their start, planned at their last update (so a planned closure does not sit above today's news)
+    add('rw', hkRoadworks(), rw => (rw.data || []).map((f: any) => { const p = f.properties, hk = (x: string) => Date.parse(x.replace(' ', 'T') + '+08:00')
+      return { id: 'rw' + p.roadworks_id, text: `Hong Kong roadworks: ${p.roadname}, ${p.locdesc.trim()}, ${p.lane.toLowerCase()}${/lane|shoulder/i.test(p.lane) ? '' : ' lane'} closed ${p.starttime.slice(5)} to ${p.endtime.slice(5)} (${p.worksstatus.toLowerCase()})`,
+        t: p.worksstatus === 'In Progress' ? hk(p.starttime) : hk(p.lastupdatetime), c: f.geometry.coordinates, src: 'Highways Department' } })
+      .filter((x: Item, i: number, all: Item[]) => all.findIndex(y => y.text === x.text) === i))   // two works orders, one closure: say it once
     add('td', hkTraffic(), hk => (hk.data || []).map(x => ({ id: x.id, text: `Hong Kong: ${x.text}`, t: x.t, c: x.c || HK_CENTRE, src: 'Transport Department' })))
     return () => { live = false }
   }, [])
@@ -630,6 +652,33 @@ function Feed({ fly, allPress, setAllPress }: { fly: (c: { center: [number, numb
       {open && allPress && <ul>{press.map(i => <li key={i.id}><a href={i.href} target="_blank" rel="noreferrer"><span>{i.text}</span><small>HKSAR Government press release, {ago(i.t)}</small></a></li>)}</ul>}
     </aside>
   )
+}
+
+// Drive or ride (drive.ts): a car or scooter on the real roads in view, chase camera, every layer still on.
+function Drive({ map }: { map: () => maplibregl.Map | undefined }) {
+  const [d, setD] = useState<Driver | null>(null), [v, setV] = useState<Vehicle>('car'), [, tick] = useState(0), [msg, setMsg] = useState('')
+  const go = (kind: Vehicle) => { const m = map(); if (!m) return
+    if (m.getZoom() < 15) { setMsg('Zoom in to a street first (or pick a city), then drive.'); return }
+    const dr = new Driver(m, kind); let n = 0; dr.onTick = () => { if (++n % 6 === 0) tick(n) }
+    if (dr.start()) { setD(dr); setMsg('') } else setMsg(dr.stuck) }
+  useEffect(() => () => d?.stop(), [d])
+  const hold = (k: 'up' | 'down' | 'left' | 'right') => ({ onPointerDown: () => d?.press(k, true), onPointerUp: () => d?.press(k, false), onPointerLeave: () => d?.press(k, false) })
+  if (!d) return (
+    <div className="float cs-drive">
+      <select value={v} onChange={e => setV(e.target.value as Vehicle)} aria-label="Vehicle"><option value="car">Car</option><option value="scooter">Scooter</option></select>
+      <button onClick={() => go(v)}><iconify-icon icon="ph:car" width="16" /> Drive here</button>
+      {msg && <small>{msg}</small>}
+    </div>)
+  return (
+    <div className="float cs-drive driving" aria-live="polite">
+      <b>{Math.round(d.speed * 3.6)} km/h</b><span>{d.vehicle === 'car' ? 'Car' : 'Scooter'} on {d.road ? `${d.road} (${d.cls})` : `a ${d.cls || ''} road`}</span>
+      <small>{d.hk ? 'Roads and one-way rules: Transport Department, Road Network (via AlreadyOpen hk-roads)' : 'Roads and one-way rules: OpenStreetMap'}</small>
+      {d.stuck && <small>{d.stuck}</small>}
+      <small>Arrow keys or WASD: up to go, down to brake, left or right to turn at the next junction. Real roads only; one-way rules kept.</small>
+      <div className="pad"><button {...hold('left')} aria-label="Turn left">◀</button><button {...hold('up')} aria-label="Accelerate">▲</button>
+        <button {...hold('down')} aria-label="Brake">▼</button><button {...hold('right')} aria-label="Turn right">▶</button></div>
+      <button onClick={() => { d.stop(); setD(null) }}>Stop driving</button>
+    </div>)
 }
 
 // The place under the map centre; over water (a harbour, a bay), the place most of the view's land belongs to, sampled on a 5x5 grid over the screen (a tilted view's bounds reach past the horizon).

@@ -276,3 +276,12 @@ button, input, select { font: inherit; color: inherit }
   .cs-feed { display: none }
   .cs-tool::after { display: none }
 }
+
+/* Drive or ride on /sim (drive.ts) */
+.cs-drive { bottom: calc(var(--s3) + 64px); left: var(--s3); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; max-width: min(22rem, calc(100vw - 32px)) }
+.cs-drive button, .cs-drive select { font: inherit; font-size: 0.875rem; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px }
+.cs-drive small { color: var(--ink-2); font-size: 0.75rem; flex-basis: 100% }
+.cs-drive.driving b { font-size: 1.5rem; font-variant-numeric: tabular-nums }
+.cs-drive .pad { display: grid; grid-template-columns: repeat(4, 44px); gap: 6px; flex-basis: 100% }
+.cs-drive .pad button { justify-content: center; height: 44px; touch-action: none; user-select: none }
+.cs2 .cs-drive { bottom: auto; top: calc(var(--s3) + 56px) }

@@ -8,6 +8,8 @@ import { AADT_STOPS, DENSITY_STOPS, LOCAL, cellsFor, firstXY, meets, type Bbox }
 import type { LegendSpec } from './legend'
 import { FIRE, FIRE_MINZOOM, FIRE_MODES, SA_BOX, drawable, fireLegend } from './fire'
 import { HKR_BOX, HKR_RULES, hkRoadLegend } from './hk-roads'
+import { HKR_LIVE, SPEED_STOPS } from './hk-live'
+import { KINDS } from './district'
 
 export type Answer = {
   status: 'loading' | 'ok' | 'empty' | 'error' | 'outside' | 'zoom'
@@ -128,10 +130,14 @@ async function base(w: World, v: ViewId): Promise<Answer> {
   }
   if (v === 'height') {
     const sub = w.state.sub.height || 'all'
-    const legend: LegendSpec = { kind: 'ramp', title: 'Height above ground', colors: RAMPS.viridis[th], ticks: HEIGHT_STOPS.map((h, i) => i === HEIGHT_STOPS.length - 1 ? `${h} m+` : `${h}`),
-      note: z >= 14 ? 'Pale grey: no height in the data.' : 'Below street zoom the tallest buildings are drawn first; every building appears at street zoom.' }
+    const gen = w.state.gen ? ` White see-through shapes are generated guesses on land where no building is mapped${z < 15 ? ' (from street zoom)' : ''}, never counted.` : ''
+    const legend: LegendSpec = sub === 'character'
+      ? { kind: 'items', title: 'District character: what buildings are used for', items: KINDS.map(k => ({ label: k.label, color: k.color, shape: 'dot' as const })),
+        note: `A building's own use where its data has one; otherwise its 250 m district's, from the buildings around it, OpenStreetMap land use and shop density.${z < 14 ? ' Districts are worked out from street zoom.' : ''}${gen}` }
+      : { kind: 'ramp', title: 'Height above ground', colors: RAMPS.viridis[th], ticks: HEIGHT_STOPS.map((h, i) => i === HEIGHT_STOPS.length - 1 ? `${h} m+` : `${h}`),
+        note: (z >= 14 ? 'Pale grey: no height in the data.' : 'Below street zoom the tallest buildings are drawn first; every building appears at street zoom.') + gen }
     if (z < 6) return { status: 'zoom', legend, detail: 'Buildings draw from regional zoom, tallest first. Every building appears at street zoom.', jump: { label: 'Fly to Hong Kong', ...HK } }
-    const layers = (w.state.views.includes('height') ? LAYERS.height : LAYERS.base).filter(id => m.getLayer(id) && m.getLayoutProperty(id, 'visibility') === 'visible')
+    const layers = (w.state.views.includes('height') ? LAYERS.height : LAYERS.base).filter(id => id !== 'h-gen' && m.getLayer(id) && m.getLayoutProperty(id, 'visibility') === 'visible')   // generated: never counted
     const fs = layers.length ? m.queryRenderedFeatures({ layers }) : []
     const seen = new Map<string, any>()
     for (const f of fs) { const p: any = f.properties, k = String(f.id ?? p.id ?? JSON.stringify(f.geometry).slice(0, 80)); if (!seen.has(k)) seen.set(k, p) }
@@ -195,14 +201,15 @@ async function base(w: World, v: ViewId): Promise<Answer> {
     if (!inHK(c)) return { status: 'outside', legend, detail: 'Transit is mapped for Hong Kong so far. Other cities need their GTFS feeds turned into pipelines first.', jump: { label: 'Go to Hong Kong', ...HK } }
     const mt = await D.mtr()
     if (!mt.data) return { status: 'error', legend, errors: [`hk-transit MTR: ${mt.error}`] }
-    const stations = new Set<string>()
-    for (const l of mt.data.lines) for (const s of l.stations) if (inView([s[4], s[5]])) stations.add(s[0])
+    const stations = new Set<string>(), lrStops = new Set<string>(), heavy = mt.data.lines.filter((l: any) => !l.lr)   // Light Rail: lr lines, since 2026-10-14
+    for (const l of mt.data.lines) for (const s of l.stations) if (inView([s[4], s[5]])) (l.lr ? lrStops : stations).add(s[0])
+    const lr = lrStops.size ? ` ${lrStops.size} Light Rail stops in view.` : ''
     const updated = `hk-transit built ${mt.data.built.replace('T', ' ').slice(0, 16)}`
-    if (z < 11) return { status: 'ok', legend, updated, value: String(new Set(mt.data.lines.map((l: any) => l.line)).size), counts: 'MTR lines', detail: 'Zoom in to see bus and minibus routes.' }
-    if (!w.state.views.includes('transit')) return { status: 'ok', legend, updated, value: String(stations.size), counts: 'MTR stations in view', detail: 'Open this view to load bus routes.' }
+    if (z < 11) return { status: 'ok', legend, updated, value: String(new Set(heavy.map((l: any) => l.line)).size), counts: 'MTR lines', detail: `${mt.data.lines.length > heavy.length ? `Plus Light Rail, ${new Set(mt.data.lines.filter((l: any) => l.lr).map((l: any) => l.route ?? l.line)).size} routes. ` : ''}Zoom in to see bus and minibus routes.` }
+    if (!w.state.views.includes('transit')) return { status: 'ok', legend, updated, value: String(stations.size), counts: 'MTR stations in view', detail: `${lr.trim()} Open this view to load bus routes.`.trim() }
     const routes = new Set(w.busLines.filter(f => f.geometry.coordinates.some(inView)).map(f => `${f.properties.op} ${f.properties.route}`))
     return { status: routes.size || stations.size ? 'ok' : w.pending.size ? 'loading' : 'empty', legend, updated, value: nf.format(routes.size), counts: 'bus and minibus routes in view',
-      detail: `${stations.size} MTR stations in view.`, ...(routes.size || stations.size ? {} : { detail: 'No routes here. Try the harbour front.', jump: { label: 'Go to Central', ...HK } }) }
+      detail: `${stations.size} MTR stations in view.${lr}`, ...(routes.size || stations.size ? {} : { detail: 'No routes here. Try the harbour front.', jump: { label: 'Go to Central', ...HK } }) }
   }
   if (v === 'rules' && !(import.meta.env.PUBLIC_EDITION === 'full' && w.state.sub.rules === 'bg')) {
     const t = w.state.sub.rules || 'BEC', label = D.RISE_LABEL[t]
@@ -277,6 +284,21 @@ async function base(w: World, v: ViewId): Promise<Answer> {
     const sub = w.state.sub.traffic || 'all', V = RAMPS.viridis[th]
     // Hong Kong: road rules from TD's Road Network (the 'Road rules (Hong Kong)' map, or 'all' over Hong Kong)
     const box: Bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+    // Hong Kong live speeds and journey times, and EV charging: the map's own layers carry the counts (country-layer lines)
+    if (sub === 'hkspeed' || sub === 'hkev') {
+      const legend: LegendSpec = sub === 'hkev' ? { kind: 'items', title: 'EV charging (Environmental Protection Department)', items: [] }
+        : { kind: 'ramp', title: 'Road speed now, km/h (Transport Department)', colors: RAMPS.inferno[th], ticks: SPEED_STOPS.map((x, i) => i === SPEED_STOPS.length - 1 ? `${x}+` : String(x)),
+          note: 'Strategic and major roads only.' }
+      if (!meets(box, HKR_BOX)) return { status: 'outside', legend, detail: `${sub === 'hkev' ? 'EV charging is' : 'Live speeds and journey times are'} mapped for Hong Kong.`, jump: { label: 'Go to Hong Kong', center: [114.17, 22.32], zoom: 12 } }
+      if (sub === 'hkev') return { status: 'ok', legend, updated: 'EPD (updated quarterly), copied every 15 minutes by AlreadyOpen hk-alerts' }
+      if (!m.areTilesLoaded()) await Promise.race([m.once('idle'), new Promise(r => setTimeout(r, 4000))])
+      const seen = new Map<string, number>()
+      for (const f of m.getLayer(HKR_LIVE) ? m.queryRenderedFeatures({ layers: [HKR_LIVE] }) : []) seen.set(String(f.properties.ROUTE_ID), 1)
+      const sp = D.peek<{ at: string; speeds: Record<string, number> }>('hk-speeds')?.data, v2 = [...seen.keys()].map(k => sp?.speeds[k]).filter((x): x is number => x != null).sort((a, b2) => a - b2)
+      if (!v2.length) return { status: w.pending.size || !sp ? 'loading' : 'empty', legend, detail: z < 10 ? 'Zoom in to see road speeds.' : 'No measured road in view: speeds cover strategic and major roads.' }
+      return { status: 'ok', legend, updated: `TD, every 2 minutes; as of ${new Date(sp!.at.replace(' ', 'T') + '+08:00').toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}`, value: nf.format(Math.round(v2[v2.length >> 1])), counts: 'km/h, median speed of the measured road segments in view',
+        detail: `${nf.format(v2.length)} segments; slowest ${Math.round(v2[0])} km/h, fastest ${Math.round(v2.at(-1)!)} km/h.` }
+    }
     if (sub === 'hkroads' || (sub === 'all' && meets(box, HKR_BOX) && !meets(box, [129, -38.2, 141.1, -25.9]))) {
       const legend: LegendSpec = { kind: 'items', title: 'Road rules (Transport Department)', items: hkRoadLegend() }
       const base = { legend, updated: 'TD Road Network (2nd generation), via AlreadyOpen hk-roads, rebuilt weekly' }

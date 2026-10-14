@@ -52,10 +52,12 @@ import cone from '@iconify-icons/ph/traffic-cone-bold'
 import school from '@iconify-icons/ph/graduation-cap-bold'
 import firstAid from '@iconify-icons/ph/first-aid-bold'
 import arrowR from '@iconify-icons/ph/arrow-right-bold'
+import clockB from '@iconify-icons/ph/clock-bold'
+import plug from '@iconify-icons/ph/plug-charging-bold'
 export const MAP_ICONS: Record<string, { body: string; width?: number; height?: number }> = {
   'i-pulse': pulse, 'i-hurricane': hurricane, 'i-drop': drop, 'i-sun-dim': sunDim, 'i-fire': fire, 'i-mountains': mountains,
   'i-snowflake': snowflake, 'i-warning': warn, 'i-subway': subway, 'i-satellite': satellite,
-  'i-plane': takeoff, 'i-heli': helicopter, 'i-anchor': anchor, 'i-balloon': balloon, 'i-cone': cone, 'i-school': school, 'i-first-aid': firstAid, 'i-arrow': arrowR }
+  'i-plane': takeoff, 'i-heli': helicopter, 'i-anchor': anchor, 'i-balloon': balloon, 'i-cone': cone, 'i-school': school, 'i-first-aid': firstAid, 'i-arrow': arrowR, 'i-clock': clockB, 'i-plug': plug }
 
 export async function iconImage(d: { body: string; width?: number; height?: number }, px = 64) {
   const w = d.width || 16, h = d.height || 16

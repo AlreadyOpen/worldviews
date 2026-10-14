@@ -10,7 +10,8 @@ export const VIEWS: Record<ViewId, {
   subs: { id: string; label: string }[]
 }> = {
   height: { question: 'How tall is it?', noun: 'Height', topic: 'Built city', icon: 'ph:buildings',
-    subs: [{ id: 'all', label: 'Every height' }, { id: 'tall', label: '150 m and taller' }, { id: 'super', label: 'Supertall, 300 m and taller' }] },
+    subs: [{ id: 'all', label: 'Every height' }, { id: 'tall', label: '150 m and taller' }, { id: 'super', label: 'Supertall, 300 m and taller' },
+      { id: 'character', label: 'District character: what buildings are used for' }] },
   hazards: { question: 'What is happening now?', noun: 'Hazards', topic: 'Safety', icon: 'ph:warning-circle',
     subs: [{ id: 'all', label: 'All events' }, { id: 'quakes', label: 'Earthquakes' }, { id: 'storms', label: 'Cyclones and storms' },
       { id: 'floods', label: 'Floods and drought' }, { id: 'fire', label: 'Wildfires and volcanoes' }, { id: 'roads', label: 'Roads and transport (Hong Kong, South Australia)' },
@@ -19,7 +20,8 @@ export const VIEWS: Record<ViewId, {
     subs: [{ id: 'all', label: 'Rail and bus' }, { id: 'rail', label: 'MTR rail' }, { id: 'bus', label: 'Bus and minibus' }] },
   traffic: { question: 'How busy are the roads?', noun: 'Traffic', topic: 'Roads', icon: 'ph:car',
     subs: [{ id: 'all', label: 'Traffic and crashes' }, { id: 'volume', label: 'Vehicles per day' }, { id: 'crashes', label: 'Crashes, 2020 to 2024' },
-      { id: 'hkroads', label: 'Road rules (Hong Kong)' }] },
+      { id: 'hkroads', label: 'Road rules (Hong Kong)' }, { id: 'hkspeed', label: 'Speeds and journey times now (Hong Kong)' },
+      { id: 'hkev', label: 'EV charging (Hong Kong)' }] },
   people: { question: 'Who lives here?', noun: 'People', topic: 'People', icon: 'ph:users-three',
     subs: [{ id: 'density', label: 'Density' }, { id: 'population', label: 'Population' }, { id: 'aged', label: 'Aged 65 and over' },
       { id: 'urban', label: 'Living in towns and cities' }] },

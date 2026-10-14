@@ -94,6 +94,23 @@ export const hkPress = () => once('hk-press', async () => {
   return { all, notices: all.filter(i => NOTICE.test(i.text) && !seen.has(i.text) && !!seen.add(i.text)) }
 })
 
+// Hong Kong International Airport's flights (AAHK, via AlreadyOpen hk-airport-flights; the API refuses browsers): by callsign,
+// the scheduled movement nearest to now, as flat fields for the plane's card. Airport codes stay IATA codes.
+const AIRPORT_FLIGHTS = 'https://huggingface.co/buckets/alreadyopen/hk-airport-flights/resolve/live/flights.json'
+const aahk = async () => {
+  const d = await json(AIRPORT_FLIGHTS), now = Date.now(), out: Record<string, any> = {}, gap: Record<string, number> = {}
+  for (const f of d.flights || []) {
+    const at = Date.parse(`${f.date}T${f.time}:00+08:00`), g = Math.abs(at - now), where = (f.arrival ? f.origin : f.destination) || []
+    for (const c of f.callsigns || []) if (!(c in gap) || g < gap[c]) {
+      gap[c] = g
+      out[c] = { hkg: `${f.cargo ? 'Cargo ' : ''}${f.arrival ? 'arrival from' : 'departure to'} ${where.join(', ')}`.replace(/^Cargo a/, 'Cargo a').replace(/^a/, 'A').replace(/^d/, 'D'),
+        hkg_sched: `${f.time} ${f.date}`, hkg_status: f.status, hkg_nos: (f.flight || []).map((x: any) => x.no).join(', '),
+        hkg_terminal: f.terminal, hkg_gate: f.gate, hkg_stand: f.stand, hkg_belt: f.baggage }
+    }
+  }
+  return out
+}
+
 // "less than 15 minutes", "1 hour", "over 8 hours" to minutes
 const mins = (s = '') => { const m = s.match(/([\d.]+)\s*(minute|hour)/); return m ? +m[1] * (m[2] === 'hour' ? 60 : 1) : null }
 export const ALT_M_STOPS = [0, 1000, 3000, 7000, 12000]
@@ -140,13 +157,13 @@ export const HK_LAYERS: Local[] = [
   { id: 'L-hk-flights', view: 'satellites', area: HK250, minzoom: 5, what: 'aircraft around Hong Kong (adsb.lol, 15-minute snapshot)',
     name: 'adsb.lol via AlreadyOpen world-flights', href: 'https://huggingface.co/datasets/alreadyopen/world-flights', licence: 'ODbL 1.0',
     load: async () => {
-      const d = await json(`${FLIGHTS}/live/hk.json`)
+      const [d, apt] = await Promise.all([json(`${FLIGHTS}/live/hk.json`), aahk().catch(() => ({}) as Record<string, any>)])
       asOf = (d.now || 0) * (d.now > 1e12 ? 1 : 1000)
       return (d.ac || []).filter((a: any) => Number.isFinite(a.lon) && Number.isFinite(a.lat)).map((a: any) => {
         const ft = typeof a.alt_geom === 'number' ? a.alt_geom : typeof a.alt_baro === 'number' ? a.alt_baro : 0   // 'ground' = 0
         return { type: 'Feature', geometry: { type: 'Point', coordinates: [a.lon, a.lat] },
           properties: { flight: (a.flight || '').trim(), reg: a.r, type: a.t, alt_ft: ft, alt_m: Math.round(ft * 0.3048), ground: a.alt_baro === 'ground',
-            gs: a.gs, track: a.track ?? a.true_heading ?? 0, squawk: a.squawk } }
+            gs: a.gs, track: a.track ?? a.true_heading ?? 0, squawk: a.squawk, ...apt[(a.flight || '').trim()] } }
       })
     },
     layers: d => [circle('L-hk-flights', ramp(['get', 'alt_m'], ALT_M_STOPS, RAMPS.viridis[d ? 'dark' : 'light']), ['interpolate', ['linear'], ['zoom'], 5, 3, 12, 7], d),
@@ -155,5 +172,8 @@ export const HK_LAYERS: Local[] = [
     summary: all => `Aircraft around Hong Kong: ${nf.format(all.length)}${asOf ? `, positions at ${new Date(asOf).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : ''} (15-minute snapshot)`,
     pick: p => ({ title: p.flight || p.reg || 'Aircraft', rows: [...has('Registration', p.reg), ...has('Type', p.type),
       ['Altitude', p.ground ? 'On the ground' : `${nf.format(p.alt_ft)} ft (${nf.format(p.alt_m)} m)`], ...has('Ground speed', p.gs != null ? `${Math.round(p.gs)} kt` : null),
-      ...has('Track', p.track != null ? `${Math.round(p.track)}°` : null), ...has('Squawk', p.squawk)] }) },
+      ...has('Track', p.track != null ? `${Math.round(p.track)}°` : null), ...has('Squawk', p.squawk),
+      ...(p.hkg ? [['Hong Kong airport', `${p.hkg}, scheduled ${p.hkg_sched}`] as [string, string], ...has('Status', p.hkg_status), ...has('Flight numbers', p.hkg_nos),
+        ...has('Terminal', p.hkg_terminal), ...has('Gate', p.hkg_gate), ...has('Stand', p.hkg_stand), ...has('Baggage belt', p.hkg_belt),
+        ['Schedule source', 'Airport Authority Hong Kong, via AlreadyOpen hk-airport-flights (DATA.GOV.HK terms)'] as [string, string]] : [])] }) },
 ]
